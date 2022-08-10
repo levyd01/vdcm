@@ -1,0 +1,2 @@
+2    #chunks_per_line
+6.0  #bits_per_pixel
