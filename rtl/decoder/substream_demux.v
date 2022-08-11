@@ -23,6 +23,7 @@ module substream_demux
   input wire [15:0] num_extra_mux_bits,
   input wire [15:0] chunk_size,
   input wire [34:0] sliceNumDwords,
+  input wire [9:0] slices_per_line,
   
   input wire [255:0] in_data,
   input wire in_sof,
@@ -207,9 +208,9 @@ always @ (posedge clk or negedge rst_n)
       nbr_wrap_around_rd <= ~nbr_wrap_around_rd;
   end
 wire buffer_empty;
-assign buffer_empty = (nbr_wrap_around_wr ^ nbr_wrap_around_rd) & (rate_buffer_addr_w == rate_buffer_addr_r);
+assign buffer_empty = ~(nbr_wrap_around_wr ^ nbr_wrap_around_rd) & (rate_buffer_addr_w == rate_buffer_addr_r);
 wire buffer_full;
-assign buffer_full = ~(nbr_wrap_around_wr ^ nbr_wrap_around_rd) & (rate_buffer_addr_w == rate_buffer_addr_r);
+assign buffer_full = (nbr_wrap_around_wr ^ nbr_wrap_around_rd) & (rate_buffer_addr_w == rate_buffer_addr_r);
 reg overflow;
 reg underflow;
 always @ (posedge clk or negedge rst_n)
@@ -277,7 +278,7 @@ reg [15:0] byte_cnt;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     byte_cnt <= 16'd0;
-  else if (in_sof | early_eos)
+  else if (in_sof | early_eos | (slices_per_line == 10'd1))
       byte_cnt <= 16'd0;
   else if (rd_en)
     if (byte_cnt + 6'd32 >= chunk_size) 
@@ -289,7 +290,7 @@ reg [5:0] rd_data_fullness;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n) 
     rd_data_fullness <= 6'd32;
-  else if (in_sof)
+  else if (in_sof | (slices_per_line == 10'd1))
       rd_data_fullness <= 6'd32;
   else if (rd_en)
     if ((byte_cnt + 7'd64 >= chunk_size) & (rd_data_fullness == 6'd32))

@@ -14,12 +14,19 @@ print(config)
 test_nbr = config['test_number']
 compile_only = config['compile']
 
+# Create Modelsim library
+#os.system("vlib work")
+#os.system("vmap work")
 # Compile
 verilog_file_list = ["tb_decoder.sv", \
+                     "../../rtl/utils/synchronizer.v", \
                      "../../rtl/utils/dp_ram.v", \
                      "../../rtl/utils/sp_ram.v", \
+                     "../../rtl/utils/sync_dp_ram.v", \
                      "../../rtl/decoder/vdcm_decoder.v", \
                      "../../rtl/decoder/pps_regs.v", \
+                     "../../rtl/decoder/in_sync_buf.v", \
+                     "../../rtl/decoder/slice_demux.v", \
                      "../../rtl/decoder/slice_decoder.v", \
                      "../../rtl/decoder/substream_demux.v", \
                      "../../rtl/decoder/ssmFunnelShifter.v", \
@@ -33,7 +40,9 @@ verilog_file_list = ["tb_decoder.sv", \
                      "../../rtl/decoder/masterQp2qp.v", \
                      "../../rtl/decoder/decoder_csc.v", \
                      "../../rtl/decoder/pixels_buf.v", \
-                     "../../rtl/decoder/output_buffers.v" ]
+                     "../../rtl/decoder/output_buffers.v", \
+                     "../../rtl/decoder/out_sync_buf.v", \
+                     "../../rtl/decoder/slice_mux.v" ]
 
 for file_name in verilog_file_list:
   vlog_arg = "vlog " + file_name             
@@ -49,6 +58,7 @@ if (compile_only):
 os.system("cp golden/test" + str(test_nbr) + "/debugTracerDecoder.txt golden/debugTracerDecoder.txt")
 os.system("cp golden/test" + str(test_nbr) + "/golden_image.out.ppm golden/golden_image.out.ppm")
 os.system("cp golden/test" + str(test_nbr) + "/test_cfg.txt .")
+os.system("cp golden/test" + str(test_nbr) + "/vdcm.bits .")
 
 # Generate from debugTracerDecoder.txt all golden files needed by Verilog testbench
 os.chdir('./golden')
@@ -91,4 +101,4 @@ if (cmp_status != 0):
    print("Simulation failed")
    exit(-1)
 else:
-   print("Simulatin passed -:)")
+   print("Simulation passed -:)")

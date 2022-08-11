@@ -259,6 +259,7 @@ generate
       .chunk_size                     (chunk_size),
       .slice_width                    (slice_width),
       .slice_height                   (slice_height),
+      .slices_per_line                (slices_per_line),
       .frame_height                   (frame_height),
       .slice_num_px                   (slice_num_px),
       .slice_num_bits                 (slice_num_bits),

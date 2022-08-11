@@ -32,16 +32,23 @@ with open('test' + str(test_nbr) + '/test_cfg.txt') as fr:
 
 os.chdir("./../../../c_model/x64")
 # Run VDCM Encoder to generate compressed vdcm.bits
+slicesPerLineArg = "-slicesPerLine " + str(slicesPerLine)
 inFileArg = "-inFile ../../images/" + inFile
 bitstreamArg = "-bitstream vdcm.bits"
 configFileArg = "-configFile ../config_files/v" + vdcm_version + "/" + configFile
 sliceHeightArg = ""
 if (sliceHeight != 0): # Override default slice height
-   sliceHeightArg = "-sliceHeight " + sliceHeight
-os.system("VDCM_Encoder.exe " + inFileArg + " " + bitstreamArg + " " + configFileArg + " " + sliceHeightArg)
+   sliceHeightArg = "-sliceHeight " + str(sliceHeight)
+os.system("VDCM_Encoder.exe " + inFileArg + " " + slicesPerLineArg + " " + bitstreamArg + " " + configFileArg + " " + sliceHeightArg)
+print("VDCM_Encoder.exe " + inFileArg + " " + slicesPerLineArg + " " + bitstreamArg + " " + configFileArg + " " + sliceHeightArg)
 # Run VDCM Decoder to generate golden image
 recFileArg = "-recFile golden_image.out.ppm"
 os.system("VDCM_Decoder.exe " + bitstreamArg + " " + recFileArg + " -debugTracer")
+
+# Copy generated files to test directory
+os.system("cp debugTracerDecoder.txt ../../tb/tb_decoder/golden/test" + str(test_nbr) + "/.")
+os.system("cp golden_image.out.ppm ../../tb/tb_decoder/golden/test" + str(test_nbr) + "/.")
+os.system("cp vdcm.bits ../../tb/tb_decoder/golden/test" + str(test_nbr) + "/.")
 
 
 

@@ -24,6 +24,7 @@ module slice_decoder
   input wire [15:0] chunk_size,
   input wire [$clog2(MAX_SLICE_HEIGHT)-1:0] slice_height,
   input wire [$clog2(MAX_SLICE_WIDTH)-1:0] slice_width,
+  input wire [9:0] slices_per_line,
   input wire [15:0] frame_height,
   input wire [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-1:0] slice_num_px,
   input wire [$clog2(MAX_SLICE_HEIGHT)+16-1:0] b0,
@@ -151,6 +152,7 @@ substream_demux_u
   .num_extra_mux_bits           (num_extra_mux_bits),
   .chunk_size                   (chunk_size),
   .sliceNumDwords               (sliceNumDwords),
+  .slices_per_line              (slices_per_line),
 
   .in_data                      (in_data),
   .in_sof                       (in_sof),
