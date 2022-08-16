@@ -14,6 +14,7 @@ module transform_mode
   
   input wire fbls, // First line of slice
   input wire resetLeft, // First block of chunk
+  input wire soc,
   input wire eoc,
   input wire eob,
   input wire sos,
@@ -159,14 +160,17 @@ endgenerate
 reg pResidual_valid;
 reg [2:0] bestIntraPredIdx_dl;
 reg eoc_dl;
+reg soc_dl;
 always @ (posedge clk or negedge ~rst_n)
   if (~rst_n) begin
     bestIntraPredIdx_dl <= 3'd0;
     eoc_dl <= 1'b0;
+    soc_dl <= 1'b0;
   end
   else if (pResidual_valid) begin
     bestIntraPredIdx_dl <= bestIntraPredIdx;
     eoc_dl <= eoc;
+    soc_dl <= soc;
   end
 
 reg [2:0] resetLeft_dl;
@@ -344,14 +348,7 @@ always @ (*)
     for (col = 0; col < 4; col = col + 1)
       neighborsAboveForIntra[c][col] = neighborsAbove_r[c][col];
     for (col = 4; col < 16; col = col + 1)
-      if (eoc_dl & (col >= 4)) begin // block to the right of the slice boundary: duplicate last valid pixel
-        if (col < 8)
-          neighborsAboveForIntra[c][col] = neighborsAbove_from_ram[c][col];
-        else // (col >= 8) 
-          neighborsAboveForIntra[c][col] = neighborsAboveForIntra[c][7];
-      end
-      else
-        neighborsAboveForIntra[c][col] = neighborsAbove[c][col-4];
+      neighborsAboveForIntra[c][col] = neighborsAbove[c][col-4];
   end
 
 function signed [13:0] Filter3;
@@ -470,6 +467,19 @@ always @ (posedge clk)
                     if (eoc_dl) begin
                       // TBD
                     end
+                    else if (soc_dl)
+                      if (col == 0) begin
+                        predBlk[c][0][col] <= ($signed({1'b0, meanValue[c]}) + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
+                        predBlk[c][1][col] <= Filter3($signed({1'b0, meanValue[c]}), $signed({1'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
+                      end
+                      else if (col == 1) begin
+                        predBlk[c][0][col] <= (neighborsAboveForIntra[c][4+col-1] + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
+                        predBlk[c][1][col] <= Filter3($signed({1'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                      end
+                      else begin
+                        predBlk[c][0][col] <= (neighborsAboveForIntra[c][4+col-1] + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
+                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                      end
                     else begin
                       predBlk[c][0][col] <= (neighborsAboveForIntra[c][4+col-1] + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
                       predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
@@ -489,6 +499,16 @@ always @ (posedge clk)
                       predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
                       predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-4], neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
                     end
+                  end
+                // 2'd1: // 4:2:2 TBD 
+                // 2'd2: // 4:2:0 TBD
+              endcase
+            INTRA_HL:
+              case (chroma_format)
+                2'd0: // 4:4:4
+                  for (col = 0; col < 8; col = col + 1) begin
+                    predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                    predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+4]);
                   end
                 // 2'd1: // 4:2:2 TBD 
                 // 2'd2: // 4:2:0 TBD

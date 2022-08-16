@@ -416,7 +416,7 @@ always @ (posedge clk or negedge rst_n)
 
 wire [3:0] mux_word_request;
 wire en_mux_word_request;
-assign en_mux_word_request = ((pos_in_block == 2'd0) & ~ssm_sof) | ssm_sof;
+assign en_mux_word_request = (((pos_in_block == 2'd0) & ~ssm_sof) | ssm_sof) & ~eos;
 assign mux_word_request[0] = (sos_fsm != SOS_FSM_IDLE) & ((sos_fsm == SOS_FSM_FETCH_SSM0) ? sos_mux_word_request_0 : mux_word_request_i[0]) & ~mux_word_valid[0] & en_mux_word_request;
 assign mux_word_request[1] = rate_buf_read_allowed & mux_word_request_i[1] & ~mux_word_valid[1] & ((sos_fsm == SOS_FSM_PARSE_SSM0) | (sos_fsm == SOS_FSM_RUNTIME)) & en_mux_word_request;
 assign mux_word_request[2] = rate_buf_read_allowed & mux_word_request_i[2] & ~mux_word_valid[2] & ((sos_fsm == SOS_FSM_PARSE_SSM0) | (sos_fsm == SOS_FSM_RUNTIME)) & en_mux_word_request;
@@ -457,7 +457,7 @@ generate
       .data_to_be_parsed            (data_to_be_parsed[gi]),
       .ready                        (fs_ready[gi]),
       .size_to_remove               (size_to_remove[gi]),
-      .size_to_remove_valid         (size_to_remove_valid[gi]/* & ~eos*/)
+      .size_to_remove_valid         (size_to_remove_valid[gi])
     );
   end
 endgenerate

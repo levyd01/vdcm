@@ -76,6 +76,7 @@ module slice_decoder
 );
 
 wire start_decode;
+wire soc;
 wire eoc;
 wire sos;
 wire eos;
@@ -109,6 +110,7 @@ block_position_u
                                 
   .start_decode                 (start_decode),
   .header_parsed                (header_parsed),
+  .soc                          (soc),
   .eoc                          (eoc),
   .sos                          (sos),
   .eos                          (eos),
@@ -263,6 +265,7 @@ decoding_processor_u
   .sos                          (sos),
   .sob                          (sob),
   .eob                          (eob),
+  .soc                          (soc),
   .eoc                          (eoc),
   .resetLeft                    (resetLeft),
   .slice_width                  (slice_width),

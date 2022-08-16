@@ -265,7 +265,7 @@ endtask
 genvar gs;
 string s_idx_str;
 generate
-  for (gs=0; gs<MAX_NBR_SLICES; gs=gs+1) begin
+  for (gs=0; gs<MAX_NBR_SLICES; gs=gs+1) begin : slice_validation
   
   
     integer slice_cnt [MAX_NBR_SLICES-1:0];
@@ -314,6 +314,10 @@ generate
                          pQuant_g[2][8], pQuant_g[2][9], pQuant_g[2][10], pQuant_g[2][11], pQuant_g[2][12], pQuant_g[2][13], pQuant_g[2][14], pQuant_g[2][15]);
             for (c=0; c<3; c=c+1)
               for (s=0; s<16; s=s+1) begin
+                if ($isunknown(uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.pQuant_r[c][s])) begin
+                  $display("Failure: pQuant_r is X");
+                  $fatal;
+                end
                 c_str = $sformatf("%0d", c);
                 s_str = $sformatf("%0d", s);
                 s_idx_str.itoa(gs);
@@ -378,17 +382,28 @@ generate
               end
             else
               $fclose(file_blockBits[gs]);
-        
-    integer pReconBlk_g[2:0][1:0][7:0];
-    reg signed [13:0] pReconBlk_uut[2:0][1:0][7:0];
+    
+    // Reconstructed block validation    
     integer comp;
     integer r;
+    reg signed [13:0] pReconBlk_uut[MAX_NBR_SLICES-1:0][2:0][1:0][7:0];
+    always @ (*)
+      for(comp=0; comp<3; comp=comp+1)             
+        for (r=0; r<2; r=r+1)
+          for (c=0; c<8; c=c+1)
+            pReconBlk_uut[gs][comp][r][c] = uut.gen_slice_decoder[gs].slice_decoder_u.decoding_processor_u.pReconBlk_p[(comp*8*2+r*8+c)*14+:14];
+       
     string comp_str;
     string r_str;
+    integer pReconBlk_g[2:0][1:0][7:0];
     always @ (negedge clk_core)
       if (gs < chunks_per_line)
         if (uut.gen_slice_decoder[gs].slice_decoder_u.decoding_processor_u.pReconBlk_valid)
           if (!$feof(file_pReconBlk[gs])) begin
+            if ($isunknown(uut.gen_slice_decoder[gs].slice_decoder_u.decoding_processor_u.pReconBlk_p)) begin
+              $display("Failure: pReconBlk is X");
+              $fatal;
+            end
             fd = $fscanf(file_pReconBlk[gs],"%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d",
                          pReconBlk_g[0][0][0], pReconBlk_g[0][0][1], pReconBlk_g[0][0][2], pReconBlk_g[0][0][3], pReconBlk_g[0][0][4], pReconBlk_g[0][0][5], pReconBlk_g[0][0][6], pReconBlk_g[0][0][7],
                          pReconBlk_g[0][1][0], pReconBlk_g[0][1][1], pReconBlk_g[0][1][2], pReconBlk_g[0][1][3], pReconBlk_g[0][1][4], pReconBlk_g[0][1][5], pReconBlk_g[0][1][6], pReconBlk_g[0][1][7],
@@ -403,8 +418,7 @@ generate
                   c_str = $sformatf("%0d", c);
                   comp_str = $sformatf("%0d", comp);
                   s_idx_str.itoa(gs);
-                  pReconBlk_uut[comp][r][c] = uut.gen_slice_decoder[gs].slice_decoder_u.decoding_processor_u.pReconBlk_p[(comp*8*2+r*8+c)*14+:14];
-                  Assert(pReconBlk_g[comp][r][c], pReconBlk_uut[comp][r][c], {"Slice ", slice_cnt_str, ", ", s_idx_str, ": Wrong pReconBlk[",comp_str,"][",r_str,"][",c_str,"]"});
+                  Assert(pReconBlk_g[comp][r][c], pReconBlk_uut[gs][comp][r][c], {"Slice ", slice_cnt_str, ", ", s_idx_str, ": Wrong pReconBlk[",comp_str,"][",r_str,"][",c_str,"]"});
                 end
           end
         else

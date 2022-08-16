@@ -21,6 +21,7 @@ module decoding_processor
   input wire sos,
   input wire sob, // end of block
   input wire eob,
+  input wire soc,
   input wire eoc,
   input wire resetLeft,
   
@@ -111,6 +112,7 @@ transform_mode transform_mode_u
                                 
   .fbls                         (fbls),
   .resetLeft                    (resetLeft),
+  .soc                          (soc),
   .eoc                          (eoc),
   .eob                          (eob),
   .sos                          (sos),
@@ -151,10 +153,14 @@ bp_mode bp_mode_u
   .blkWidth_p                   (blkWidth_p),
   .blkHeight_p                  (blkHeight_p),
   .chroma_format                (chroma_format),
+  .csc                          (csc),
   .minPoint_p                   (minPoint_p),
+  .midPoint                     (midPoint),
   .maxPoint                     (maxPoint),
+  .bits_per_component_coded     (bits_per_component_coded),
   
   .sob                          (sob),
+  .sos                          (sos),
   .fbls                         (fbls),
   .enable_above_rd              (enable_above_rd),
   .masterQp                     (masterQp),
@@ -201,6 +207,15 @@ always @ (*)
     default:               pReconBlk_p = tm_pReconBlk_p;
   endcase
 assign pReconBlk_valid = tm_pReconBlk_valid; // Assume that all the valid come at the same clock cycle
+
+integer comp;
+integer c, r;
+reg signed [13:0] pReconBlk[2:0][1:0][7:0];
+always @ (*)
+  for(comp=0; comp<3; comp=comp+1)             
+    for (r=0; r<2; r=r+1)
+      for (c=0; c<8; c=c+1)
+        pReconBlk[comp][r][c] = pReconBlk_p[(comp*8*2+r*8+c)*14+:14];
 
 
 pixels_buf

@@ -481,13 +481,13 @@ reg [2:0] qpUpdateMode;
 always @ (*) begin
   qpUpdateMode = 3'd0;
   if (rcFullness >= 16'd57672) //88%
-        qpUpdateMode = 3'd2;
+    qpUpdateMode = 3'd2;
   else if (rcFullness >= 16'd49807)  //76%
-        qpUpdateMode = 3'd1;
+    qpUpdateMode = 3'd1;
   if (rcFullness <= 16'd7864) //12%
-        qpUpdateMode = 3'd4;
+    qpUpdateMode = 3'd4;
   else if (rcFullness <= 16'd15729)  //24%
-        qpUpdateMode = 3'd3;
+    qpUpdateMode = 3'd3;
 end
 wire signed [13:0] negDiff;
 assign negDiff = ~diffBits + 1'b1;
@@ -536,7 +536,7 @@ always @ (*)
 reg signed [3:0] deltaQp;
 always @ (posedge clk)
   if (blockBits_valid_dl[1])
-    if (~diffBits[13])
+    if (~diffBits[13]) // diffBits > 0 
       deltaQp <= QpIncrementTable[qpUpdateMode][qpIndex];
     else
       deltaQp <= -QpDecrementTable[qpUpdateMode][qpIndex];
@@ -578,12 +578,16 @@ assign lutFlatnessQpSelected = flatness_qp_lut[lutFlatnessQpIndex];
 
 reg [7:0] qpFlatnessAdjusted;
 always @ (*)
-  case (flatnessType)
-    2'd0: if (flatness_qp_very_flat < qpClamped) qpFlatnessAdjusted = flatness_qp_very_flat; else qpFlatnessAdjusted = qpClamped;
-    2'd1: if (flatness_qp_somewhat_flat < qpClamped) qpFlatnessAdjusted = flatness_qp_somewhat_flat; else qpFlatnessAdjusted = qpClamped;
-    2'd2: if (lutFlatnessQpSelected < qpClamped) qpFlatnessAdjusted = lutFlatnessQpSelected; else qpFlatnessAdjusted = qpClamped;
-    2'd3: if (lutFlatnessQpSelected > qpClamped) qpFlatnessAdjusted = lutFlatnessQpSelected; else qpFlatnessAdjusted = qpClamped;
-  endcase
+  if (flatnessFlag)
+    case (flatnessType)
+      2'd0: if (flatness_qp_very_flat < qpClamped) qpFlatnessAdjusted = flatness_qp_very_flat; else qpFlatnessAdjusted = qpClamped;
+      2'd1: if (flatness_qp_somewhat_flat < qpClamped) qpFlatnessAdjusted = flatness_qp_somewhat_flat; else qpFlatnessAdjusted = qpClamped;
+      2'd2: if (lutFlatnessQpSelected < qpClamped) qpFlatnessAdjusted = lutFlatnessQpSelected; else qpFlatnessAdjusted = qpClamped;
+      2'd3: if (lutFlatnessQpSelected > qpClamped) qpFlatnessAdjusted = lutFlatnessQpSelected; else qpFlatnessAdjusted = qpClamped;
+      default: qpFlatnessAdjusted = qpClamped;
+    endcase
+  else
+    qpFlatnessAdjusted = qpClamped;
 
 reg rcFullnessLorE96Percent;
 always @ (posedge clk) 

@@ -177,9 +177,11 @@ function [15:0] BitReverse;
 endfunction
 
 reg [1:0] nextBlockIsFls_dl;
-always @ (posedge clk)
-  if (sos_fsm == SOS_FSM_FETCH_SSM0)
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
     nextBlockIsFls_dl <= 2'b11;
+  /*if (sos_fsm == SOS_FSM_FETCH_SSM0)
+    nextBlockIsFls_dl <= 2'b11;*/
   else if (blockBits_valid)
     nextBlockIsFls_dl <= {nextBlockIsFls_dl[0], nextBlockIsFls};
 
@@ -206,17 +208,17 @@ reg flatnessFlag;
 reg [1:0] flatnessType;
 reg [2:0] nextBlockBestIntraPredIdx;
 reg [3:0] use2x2;
-reg [6:0] bpv2x2_i [3:0]; // One vector per subblock
-reg [6:0] bpv2x1_i [3:0][1:0]; // Two vectors per subblock
+reg [6:0] bpv2x2_i_0; // subblock 0
+reg [6:0] bpv2x1_i_0[1:0]; // Two vectors for subblock 0
 // Ssm 0 parser
 // ------------
 always @ (*) begin : proc_parser_0
   bit_pointer[0] = 9'd0; // init
   nextBlockBestIntraPredIdx = 3'd0; // init
   use2x2 = 4'b0000; // init
-  bpv2x2_i[0] = 7'd0; // init
-  bpv2x1_i[0][0] = 7'd0; // init
-  bpv2x1_i[0][1] = 7'd0; // init
+  bpv2x2_i_0 = 7'd0; // init
+  bpv2x1_i_0[0] = 7'd0; // init
+  bpv2x1_i_0[1] = 7'd0; // init
   curBlockMode = curBlockMode_r; // default
   modeSameFlag = 1'b0; // default
   flatnessFlag = 1'b0; // default
@@ -265,30 +267,34 @@ always @ (*) begin : proc_parser_0
           end
           if (use2x2[0]) begin
             if (bitsPerBpv == 3'd5)
-              bpv2x2_i[0] = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:5], 5);
+              bpv2x2_i_0 = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:5], 5);
             else
-              bpv2x2_i[0] = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:6], 6);
+              bpv2x2_i_0 = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:6], 6);
             bit_pointer[0] = bit_pointer[0] + bitsPerBpv;
             if (nextBlockIsFls_dl[0])
-              bpv2x2_i[0] = bpv2x2_i[0] + 6'd32;
+              bpv2x2_i_0 = bpv2x2_i_0 + 6'd32;
           end
-          else if (~use2x2[0]) begin // bpv2x1
+          else begin // bpv2x1
             if (bitsPerBpv == 3'd5) begin
-              bpv2x1_i[0][0] = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:5], 5);
+              bpv2x1_i_0[0] = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:5], 5);
+              //$display("time: %0t, bpv2x1_i[0][0] = %d", $realtime, bpv2x1_i_0[0]);
               bit_pointer[0] = bit_pointer[0] + 9'd5;
-              bpv2x1_i[0][1] = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:5], 5);
+              bpv2x1_i_0[1] = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:5], 5);
+              //$display("time: %0t, bpv2x1_i[0][1] = %d", $realtime, bpv2x1_i_0[1]);
               bit_pointer[0] = bit_pointer[0] + 9'd5;
             end
             else begin
-              bpv2x1_i[0][0] = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:6], 6);
+              bpv2x1_i_0[0] = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:6], 6);
               bit_pointer[0] = bit_pointer[0] + 9'd6;
-              bpv2x1_i[0][1] = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:6], 6);
+              bpv2x1_i_0[1] = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:6], 6);
               bit_pointer[0] = bit_pointer[0] + 9'd6;
             end
             if (nextBlockIsFls_dl[0]) begin
-              bpv2x1_i[0][0] = bpv2x2_i[0][0] + 6'd32;
-              bpv2x1_i[0][1] = bpv2x2_i[0][1] + 6'd32;
+              bpv2x1_i_0[0] = bpv2x1_i_0[0] + 7'd32;
+              bpv2x1_i_0[1] = bpv2x1_i_0[1] + 7'd32;
             end
+            //$display("time: %0t, bpv2x1_i[0][0] = %d", $realtime, bpv2x1_i_0[0]);
+            //$display("time: %0t, bpv2x1_i[0][1] = %d", $realtime, bpv2x1_i_0[1]);
           end
         end
     endcase
@@ -327,6 +333,9 @@ endfunction
 
 // Ssm 1 to 3
 // ----------
+wire [2:0] bitsPerBpv_dl;
+assign bitsPerBpv_dl = nextBlockIsFls_dl[1] ? 3'd5 : 3'd6;
+
 reg [2:0] isCompSkip;
 reg [3:0] lastSigPos [2:0];
 reg [49:0] ecg [3:0];
@@ -349,6 +358,8 @@ integer curSubstream;
 reg [3:0] bitsReqFromCodeWord [2:0][3:0];
 reg [3:0] use2x2_r;
 reg [7:0] symbol [2:0];
+reg [6:0] bpv2x2_i [2:0]; // One vector per subblock cmpnt 0 is sb 1
+reg [6:0] bpv2x1_i [2:0][1:0]; // Two vectors per subblock
 
 // in C, DecTop.cpp line #329 - codingModes[mode]->Decode ()
 always @ (*) begin : proc_parser_123
@@ -373,9 +384,9 @@ always @ (*) begin : proc_parser_123
     groupSkipActive[c] = 4'b0; // Default
     bit_pointer[curSubstream] = 9'd0; // Init
     signBitValid[c] = 16'b0;
-    bpv2x2_i[sb] = 7'd0;
-    bpv2x1_i[sb][0] = 7'd0;
-    bpv2x1_i[sb][1] = 7'd0;
+    bpv2x2_i[c] = 7'd0;
+    bpv2x1_i[c][0] = 7'd0;
+    bpv2x1_i[c][1] = 7'd0;
     symbol[c] = 8'd0;
     maxPrefix[3:0] = 4'b0;
     vecGrK = 0;
@@ -392,33 +403,34 @@ always @ (*) begin : proc_parser_123
             
     // Parse differently in each mode
     if ((curBlockMode_r == MODE_BP_SKIP) | (curBlockMode_r == MODE_BP)) begin // DecodeBpvCurBlock in C
-      if (use2x2_r[sb])
-        if (bitsPerBpv == 3'd5) begin
-          bpv2x2_i[sb] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5);
+      if (use2x2_r[sb]) begin// bpv2x2
+        if (bitsPerBpv_dl == 3'd5) begin
+          bpv2x2_i[c] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5);
           bit_pointer[curSubstream] = bit_pointer[curSubstream] + 9'd5;
         end
         else begin
-          bpv2x2_i[sb] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
+          bpv2x2_i[c] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
           bit_pointer[curSubstream] = bit_pointer[curSubstream] + 9'd6;
         end
-        if (nextBlockIsFls)
-          bpv2x2_i[sb] = bpv2x2_i[sb] + 6'd32;
-      else if (~use2x2_r[sb]) begin // bpv2x1
-        if (bitsPerBpv == 3'd5) begin
-          bpv2x1_i[sb][0] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5);
+        if (nextBlockIsFls_dl[1])
+          bpv2x2_i[c] = bpv2x2_i[c] + 6'd32;
+      end
+      else begin // bpv2x1
+        if (bitsPerBpv_dl == 3'd5) begin
+          bpv2x1_i[c][0] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5);
           bit_pointer[curSubstream] = bit_pointer[curSubstream] + 9'd5;
-          bpv2x1_i[sb][1] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5);
+          bpv2x1_i[c][1] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5);
           bit_pointer[curSubstream] = bit_pointer[curSubstream] + 9'd5;
         end
         else begin
-          bpv2x1_i[sb][0] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
+          bpv2x1_i[c][0] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
           bit_pointer[curSubstream] = bit_pointer[curSubstream] + 9'd6;
-          bpv2x1_i[sb][1] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
+          bpv2x1_i[c][1] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
           bit_pointer[curSubstream] = bit_pointer[curSubstream] + 9'd6;
         end
-        if (nextBlockIsFls) begin
-          bpv2x1_i[sb][0] = bpv2x1_i[sb][0] + 6'd32;
-          bpv2x1_i[sb][1] = bpv2x1_i[sb][1] + 6'd32;
+        if (nextBlockIsFls_dl[1]) begin
+          bpv2x1_i[c][0] = bpv2x1_i[c][0] + 6'd32;
+          bpv2x1_i[c][1] = bpv2x1_i[c][1] + 6'd32;
         end
       end
     end
@@ -522,7 +534,9 @@ always @ (*) begin : proc_parser_123
                 // decode VEC ECG (SM)
                 // DecodeVecEcSymbolSM in C
                 vecGrK = ((bitsReq[c][ecgIdx] - 1'b1) == 1'b0) ? 2 : 5;
-                maxPrefix = ((5'b1 << (bitsReq[c][ecgIdx] << 2)) - 1'b1) >> vecGrK;
+                //$display("vecGrK[%0d][%0d] = %d", c, ecgIdx, vecGrK);
+                maxPrefix = ((8'b1 << (bitsReq[c][ecgIdx] << 2)) - 1'b1) >> vecGrK;
+                //$display("maxPrefix[%0d][%0d] = %d", c, ecgIdx, maxPrefix);
                 uiBits = 1'b1;
                 prefix[c][ecgIdx] = 4'd0;
                 while (uiBits) begin
@@ -532,11 +546,12 @@ always @ (*) begin : proc_parser_123
                   if (prefix[c][ecgIdx] == maxPrefix)
                     uiBits = 1'b0;
                 end
+                //$display("prefix[%0d][%0d] = %d", c, ecgIdx, prefix[c][ecgIdx]);
                 suffix = (vecGrK == 5) ? BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5) : 
                                          BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:2], 2);
                 bit_pointer[curSubstream] = bit_pointer[curSubstream] + ((vecGrK == 5) ? 3'd5 : 2'd2);
                 //$display("suffix[%0d][%0d] = %d", c, ecgIdx, suffix);
-                //$display("vecGrK[%0d][%0d] = %d", c, ecgIdx, vecGrK);
+                
                 vecCodeNumber = (({4'b0, prefix[c][ecgIdx]} << vecGrK) | {3'b0, suffix});
                 //$display("vecCodeNumber[%0d][%0d] = %d", c, ecgIdx, vecCodeNumber);
                 if (bitsReq[c][ecgIdx] == 5'd1)
@@ -549,6 +564,7 @@ always @ (*) begin : proc_parser_123
                 shift = 3*bitsReq[c][ecgIdx];
                 for (s = curEcgStart[ecgIdx]; s < curEcgEnd[c][ecgIdx]; s = s + 1) begin
                   compEcgCoeff[c][s] = $signed({1'b0, (symbol[c] >> shift) & mask});
+                  //$display("compEcgCoeff[%0d][%0d] = %d", c, s, compEcgCoeff[c][s]);
                   shift = shift - bitsReq[c][ecgIdx];
                 end
               end
@@ -570,7 +586,7 @@ always @ (*) begin : proc_parser_123
                     5'd12: compEcgCoeff[c][s] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:12], 12);
                     default: compEcgCoeff[c][s] = 16'sd0;
                   endcase
-                  //$display("CPEC ECG (SM) compEcgCoeff[%d][%d] = %d", c, s, compEcgCoeff[c][s]);
+                  //$display("time: %0t, CPEC ECG (SM) compEcgCoeff[%0d][%0d] = %d", $realtime, c, s, compEcgCoeff[c][s]);
                   bit_pointer[curSubstream] = bit_pointer[curSubstream] + bitsReq[c][ecgIdx];
                 end
               end
@@ -586,7 +602,9 @@ always @ (*) begin : proc_parser_123
                 // decode VEC ECG (2C)
                 // DecodeVecEcSymbol2C in C
                 vecGrK = ((bitsReq[c][ecgIdx] - 1'b1) == 1'b0) ? 1 : 5;
-                maxPrefix = ((5'b1 << (bitsReq[c][ecgIdx] << 2)) - 1'b1) >> vecGrK;
+                //$display("vecGrK[%0d][%0d] = %d", c, ecgIdx, vecGrK);
+                maxPrefix = ((8'b1 << (bitsReq[c][ecgIdx] << 2)) - 1'b1) >> vecGrK;
+                //$display("maxPrefix[%0d][%0d] = %d", c, ecgIdx, maxPrefix);
                 uiBits = 1'b1;
                 prefix[c][ecgIdx] = 4'd0;
                 while (uiBits) begin
@@ -596,6 +614,7 @@ always @ (*) begin : proc_parser_123
                   if (prefix[c][ecgIdx] == maxPrefix)
                     uiBits = 1'b0;
                 end
+                //$display("prefix[%0d][%0d] = %d", c, ecgIdx, prefix[c][ecgIdx]);
                 suffix = (vecGrK == 5) ? BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5) : data_to_be_parsed[curSubstream][bit_pointer[curSubstream]];
                 bit_pointer[curSubstream] = bit_pointer[curSubstream] + ((vecGrK == 5) ? 3'd5 : 1'b1);
                 vecCodeNumber = ((prefix[c][ecgIdx] << vecGrK) | suffix);
@@ -726,9 +745,9 @@ always @ (*) begin
   bpv2x1[0][0] = bpv2x1_0_r[0];
   bpv2x1[0][1] = bpv2x1_0_r[1];
   for (sb = 1; sb < 4; sb = sb + 1) begin
-    bpv2x2[sb] = bpv2x2_i[sb];
-    bpv2x1[sb][0] = bpv2x1_i[sb][0];
-    bpv2x1[sb][1] = bpv2x1_i[sb][1];
+    bpv2x2[sb] = bpv2x2_i[sb-1];
+    bpv2x1[sb][0] = bpv2x1_i[sb-1][0];
+    bpv2x1[sb][1] = bpv2x1_i[sb-1][1];
   end
 end
 
@@ -740,9 +759,9 @@ always @ (posedge clk) begin
     flatnessType_r <= flatnessType;
     nextBlockBestIntraPredIdx_r <= nextBlockBestIntraPredIdx;
     use2x2_r <= use2x2;
-    bpv2x2_0_r <= bpv2x2_i[0];
-    bpv2x1_0_r[0] <= bpv2x1_i[0][0];
-    bpv2x1_0_r[1] <= bpv2x1_i[0][1];
+    bpv2x2_0_r <= bpv2x2_i_0;
+    bpv2x1_0_r[0] <= bpv2x1_i_0[0];
+    bpv2x1_0_r[1] <= bpv2x1_i_0[1];
     for (sb = 0; sb < 4; sb = sb + 1) begin
       bpv2x2_r[sb] <= bpv2x2[sb];
       bpv2x1_r[sb][0] <= bpv2x1[sb][0];
@@ -823,7 +842,14 @@ end
 always @ (posedge clk)
   if (parse_data)
     blockBits <= curBlockBits_d;
-    
+
+reg blockBits_valid_dl;    
+always @ (posedge clk)
+  if (sos & size_to_remove_valid[0])
+    blockBits_valid_dl <= 1'b0;
+  else
+    blockBits_valid_dl <= blockBits_valid;
+
 always @ (posedge clk)
   if (sos & size_to_remove_valid[0])
     prevBlockBitsWithoutPadding <= 14'd0;
@@ -833,7 +859,7 @@ always @ (posedge clk)
     else
       prevBlockBitsWithoutPadding <= blockBits;
   end
-assign prevBlockBitsWithoutPadding_valid = blockBits_valid;
+assign prevBlockBitsWithoutPadding_valid = blockBits_valid_dl;
 
 
 endmodule

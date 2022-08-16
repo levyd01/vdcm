@@ -22,6 +22,7 @@ module block_position
   
   input wire start_decode, // the first block of the frame
   input wire header_parsed,
+  output reg soc,
   output reg eoc,
   output reg sos,
   output reg eos,
@@ -114,7 +115,6 @@ always @ (posedge clk or negedge rst_n)
     else
       eoc <= 1'b0;
       
-reg soc;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     soc <= 1'b0;

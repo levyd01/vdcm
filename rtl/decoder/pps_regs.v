@@ -26,7 +26,7 @@ module pps_regs
   output reg [$clog2(MAX_SLICE_HEIGHT)-1:0] slice_height,
   output reg [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-1:0] slice_num_px,
   output reg [9:0] bits_per_pixel,
-  output reg [1:0] bits_per_component_coded,
+  output reg [1:0] bits_per_component_coded, // 0: 8 bpc, 1: 10 bpc, 2: 12 bpc
   output reg source_color_space, // 0: RGB, 1: YUV
   output reg [1:0] chroma_format, // 0: 4:4:4, 1: 4:2:2, 2: 4:2:0
   output reg [15:0] chunk_size,
