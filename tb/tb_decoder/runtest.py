@@ -27,31 +27,10 @@ else:
 #os.system("vlib work")
 #os.system("vmap work")
 # Compile
-verilog_file_list = ["tb_decoder.sv", \
-                     "../../rtl/utils/synchronizer.v", \
-                     "../../rtl/utils/dp_ram.v", \
-                     "../../rtl/utils/sp_ram.v", \
-                     "../../rtl/utils/sync_dp_ram.v", \
-                     "../../rtl/decoder/vdcm_decoder.v", \
-                     "../../rtl/decoder/pps_regs.v", \
-                     "../../rtl/decoder/in_sync_buf.v", \
-                     "../../rtl/decoder/slice_demux.v", \
-                     "../../rtl/decoder/slice_decoder.v", \
-                     "../../rtl/decoder/substream_demux.v", \
-                     "../../rtl/decoder/ssmFunnelShifter.v", \
-                     "../../rtl/decoder/block_position.v", \
-                     "../../rtl/decoder/syntax_parser.v", \
-                     "../../rtl/decoder/decoding_processor.v", \
-                     "../../rtl/decoder/transform_mode.v", \
-                     "../../rtl/decoder/above_pixels_buf.v", \
-                     "../../rtl/decoder/bp_mode.v", \
-                     "../../rtl/decoder/dec_rate_control.v", \
-                     "../../rtl/decoder/masterQp2qp.v", \
-                     "../../rtl/decoder/decoder_csc.v", \
-                     "../../rtl/decoder/pixels_buf.v", \
-                     "../../rtl/decoder/output_buffers.v", \
-                     "../../rtl/decoder/out_sync_buf.v", \
-                     "../../rtl/decoder/slice_mux.v" ]
+verilog_file_list = []
+with open("verilog_file_list.txt") as fp:
+    for line in fp:
+      verilog_file_list.append(line)
 
 if (prepare_only == False):
   for file_name in verilog_file_list:

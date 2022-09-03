@@ -19,7 +19,9 @@ module syntax_parser
   input wire [1:0] chroma_format, // 0: 4:4:4, 1: 4:2:2, 2: 4:2:0
   input wire [7:0] rc_stuffing_bits,
   input wire [11:0] rcStuffingBitsX9,
-  
+  input wire [1:0] bits_per_component_coded,
+  input wire [1:0] source_color_space, // Image original color space 0: RGB, 1: YCoCg, 2: YCbCr (YCoCg is impossible)
+
   input wire [4*MAX_FUNNEL_SHIFTER_SIZE-1:0] data_to_be_parsed_p,
   input wire [3:0] fs_ready,
   input wire nextBlockIsFls,
@@ -51,7 +53,13 @@ module syntax_parser
   output reg blockBits_valid,
   
   output reg [12:0] prevBlockBitsWithoutPadding,
-  output wire prevBlockBitsWithoutPadding_valid
+  output wire prevBlockBitsWithoutPadding_valid,
+  
+  output reg [1:0] blockCsc_r,
+  output reg [3:0] blockStepSize_r,
+  output reg mppfIndex_r,
+  output wire mpp_ctrl_valid // indicates that blockCsc_r & blockStepSize_r are valid
+
 );
 
 `include "../../rtl/decoder/syntax_parser_tables.v"
@@ -210,6 +218,15 @@ reg [2:0] nextBlockBestIntraPredIdx;
 reg [3:0] use2x2;
 reg [6:0] bpv2x2_i_0; // subblock 0
 reg [6:0] bpv2x1_i_0[1:0]; // Two vectors for subblock 0
+reg [1:0] nextBlockCsc; // 0: RGB, 1: YCoCg
+reg [3:0] nextBlockStepSize;
+reg [3:0] stepSizeSsm0 [2:0];
+reg [3:0] mppQuantBits_0 [2:0];
+reg signed [15:0] mppNextBlockQuant [2:0][15:0];
+reg [15:0] val;
+reg mppfIndexNextBlock;
+reg [1:0] compBits [2:0];
+
 // Ssm 0 parser
 // ------------
 always @ (*) begin : proc_parser_0
@@ -223,6 +240,19 @@ always @ (*) begin : proc_parser_0
   modeSameFlag = 1'b0; // default
   flatnessFlag = 1'b0; // default
   flatnessType = 2'b0; // default
+  nextBlockCsc = 2'b0; // default
+  nextBlockStepSize = 4'd0; // default
+  val = 16'd0; // default
+  mppfIndexNextBlock = 1'b0;
+  for (c = 0; c < 3; c = c + 1) begin
+    mppQuantBits_0[c] = 4'd0; // default
+    stepSizeSsm0[c] = 4'd0; // default
+    compBits[c] = 2'd0;
+    for (s = 0; s < compNumSamples[c]; s = s + 1) begin
+      mppNextBlockQuant[c][s] = 16'b0;
+    end
+  end
+  
   if (~eos_dl) begin
     modeSameFlag = data_to_be_parsed[0][bit_pointer[0]];
     bit_pointer[0] = bit_pointer[0] + 1'b1;
@@ -259,11 +289,95 @@ always @ (*) begin : proc_parser_0
           nextBlockBestIntraPredIdx = {data_to_be_parsed[0][bit_pointer[0]], data_to_be_parsed[0][bit_pointer[0]+1], data_to_be_parsed[0][bit_pointer[0]+2]};
           bit_pointer[0] = bit_pointer[0] + 2'd3;
         end
+      MODE_MPP, MODE_MPPF:
+        begin
+          if (curBlockMode == MODE_MPP) begin
+            // ParseCsc in C
+            if (source_color_space == 2'd2)
+              nextBlockCsc = 2'd2;
+            else begin
+              nextBlockCsc = {1'b0, data_to_be_parsed[0][bit_pointer[0]]};
+              bit_pointer[0] = bit_pointer[0] + 1'b1;
+            end
+            // ParseStepSize in C
+            if (bits_per_component_coded == 2'd0) begin
+              nextBlockStepSize = {1'b0, BitReverse(data_to_be_parsed[0][bit_pointer[0]+:3], 3)};
+              bit_pointer[0] = bit_pointer[0] + 9'd3;
+            end
+            else begin
+              nextBlockStepSize = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:4], 4);
+              bit_pointer[0] = bit_pointer[0] + 9'd4;
+            end
+          end
+          else begin // curBlockMode == MODE_MPPF
+            if (source_color_space == 2'd2) // YCbCr
+              mppfIndexNextBlock = 1'b0;
+            else begin
+              mppfIndexNextBlock = data_to_be_parsed[0][bit_pointer[0]];
+              bit_pointer[0] = bit_pointer[0] + 1'b1;
+            end
+            // DecodeMppfSuffixBits for Ssm 0
+            nextBlockCsc = {1'b0, mppfIndexNextBlock}; // m_mppfAdaptiveCsc[m_mppfIndexNext] in C
+          end          
+          // DecodeMppSuffixBits in C for ssmIdx 0
+          for (c = 0; c < 3; c = c + 1) begin
+            if (curBlockMode == MODE_MPP) begin
+              if ((nextBlockCsc == 2'd1) & (c > 0)) begin
+                if (c == 1)
+                  stepSizeSsm0[c] = stepSizeMapCo[nextBlockStepSize];
+                else // c==2
+                  stepSizeSsm0[c] = stepSizeMapCg[nextBlockStepSize];
+              end
+              else
+                stepSizeSsm0[c] = nextBlockStepSize;
+            end
+            else begin // curBlockMode == MODE_MPPF
+              compBits[c] = ~mppfIndexNextBlock ? bitsPerCompA[c] : bitsPerCompB[c];
+              case (bits_per_component_coded)
+                2'd0: stepSizeSsm0[c] = ((nextBlockCsc == 2'd1) & (c > 0)) ? 4'd9 - compBits[c] : 4'd8 - compBits[c];
+                2'd1: stepSizeSsm0[c] = ((nextBlockCsc == 2'd1) & (c > 0)) ? 4'd11 - compBits[c] : 4'd10 - compBits[c];
+                2'd2: stepSizeSsm0[c] = ((nextBlockCsc == 2'd1) & (c > 0)) ? 4'd13 - compBits[c] : 4'd12 - compBits[c];
+              endcase
+            end
+            case (bits_per_component_coded)
+              2'd0: mppQuantBits_0[c] = ((nextBlockCsc == 2'd1) & (c > 0)) ? 4'd9 - stepSizeSsm0[c] : 4'd8 - stepSizeSsm0[c];
+              2'd1: mppQuantBits_0[c] = ((nextBlockCsc == 2'd1) & (c > 0)) ? 4'd11 - stepSizeSsm0[c] : 4'd10 - stepSizeSsm0[c];
+              2'd2: mppQuantBits_0[c] = ((nextBlockCsc == 2'd1) & (c > 0)) ? 4'd13 - stepSizeSsm0[c] : 4'd12 - stepSizeSsm0[c];
+            endcase
+            case(chroma_format)
+              // 4:4:4
+              2'd0:
+                for (s = 0; s < 4; s = s + 1) begin // See g_mppSsmMapping_444 in C
+                  case(mppQuantBits_0[c])
+                    4'd1: val = data_to_be_parsed[0][bit_pointer[0]];
+                    4'd2: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:2], 2);
+                    4'd3: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:3], 3);
+                    4'd4: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:4], 4);
+                    4'd5: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:5], 5);
+                    4'd6: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:6], 6);
+                    4'd7: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:7], 7);
+                    4'd8: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:8], 8);
+                    4'd9: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:9], 9);
+                    4'd10: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:10], 10);
+                    4'd11: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:11], 11);
+                    4'd12: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:12], 12);
+                    4'd13: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:13], 13);
+                    4'd14: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:14], 14);
+                    4'd15: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:15], 15);
+                  endcase
+                  bit_pointer[0] = bit_pointer[0] + mppQuantBits_0[c];
+                  mppNextBlockQuant[c][s] = $signed({1'b0, val}) - (16'sd1 << (mppQuantBits_0[c] - 1'b1));
+                end
+              // 4:2:2 TBD
+              // 4:2:0 TBD              
+            endcase
+          end
+        end
       MODE_BP_SKIP, MODE_BP: // DecodeBpvNextBlock in C
         begin
           for (sb = 0; sb < 4; sb = sb + 1) begin
             use2x2[sb] = data_to_be_parsed[0][bit_pointer[0]];
-            bit_pointer[0] = bit_pointer[0] + 1'b1;           
+            bit_pointer[0] = bit_pointer[0] + 1'b1;
           end
           if (use2x2[0]) begin
             if (bitsPerBpv == 3'd5)
@@ -360,6 +474,9 @@ reg [3:0] use2x2_r;
 reg [7:0] symbol [2:0];
 reg [6:0] bpv2x2_i [2:0]; // One vector per subblock cmpnt 0 is sb 1
 reg [6:0] bpv2x1_i [2:0][1:0]; // Two vectors per subblock
+reg [3:0] stepSizeSsmX [2:0];
+reg [3:0] mppQuantBits_X [2:0];
+reg [1:0] blockCsc;
 
 // in C, DecTop.cpp line #329 - codingModes[mode]->Decode ()
 always @ (*) begin : proc_parser_123
@@ -376,10 +493,10 @@ always @ (*) begin : proc_parser_123
   reg [14:0] offset;
   reg [5:0]  shift;
   reg [1:0] field;
+  
   for (c = 0; c < 3; c = c + 1) begin
     // Default values to avoid latches
     curSubstream = c + 1;
-    sb = c + 1;
     coeffSign[c] = 16'b0; // Default
     groupSkipActive[c] = 4'b0; // Default
     bit_pointer[curSubstream] = 9'd0; // Init
@@ -391,6 +508,7 @@ always @ (*) begin : proc_parser_123
     maxPrefix[3:0] = 4'b0;
     vecGrK = 0;
     vecCodeNumber = 8'b0;
+    mppQuantBits_X[c] = 4'd0; // default
     for (ecgIdx = 0; ecgIdx < 4; ecgIdx = ecgIdx + 1) begin
       bitsReq[c][ecgIdx] = 5'd0;
       prefix[c][ecgIdx] = 4'd0;
@@ -400,10 +518,13 @@ always @ (*) begin : proc_parser_123
       pQuant[c][s] = 16'b0;
     end
     ecgIdx_s = 4'd0;
+    stepSizeSsmX[c] = 4'd0;
+    compBits[c] = 2'd0;
+    blockCsc = 2'd0;
             
     // Parse differently in each mode
     if ((curBlockMode_r == MODE_BP_SKIP) | (curBlockMode_r == MODE_BP)) begin // DecodeBpvCurBlock in C
-      if (use2x2_r[sb]) begin// bpv2x2
+      if (use2x2_r[c+1]) begin// bpv2x2
         if (bitsPerBpv_dl == 3'd5) begin
           bpv2x2_i[c] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5);
           bit_pointer[curSubstream] = bit_pointer[curSubstream] + 9'd5;
@@ -433,6 +554,59 @@ always @ (*) begin : proc_parser_123
           bpv2x1_i[c][1] = bpv2x1_i[c][1] + 6'd32;
         end
       end
+    end
+    else if ((curBlockMode_r == MODE_MPP) | (curBlockMode_r == MODE_MPPF)) begin // MppMode::Decode in C
+      if (curBlockMode_r == MODE_MPP) begin
+        // DecodeMppSuffixBits for ssmIdx != 0
+        if ((blockCsc_r == 2'd1) & (c > 0)) begin
+          if (c == 1)
+            stepSizeSsmX[c] = stepSizeMapCo[blockStepSize_r];
+          else // c==2
+            stepSizeSsmX[c] = stepSizeMapCg[blockStepSize_r];
+        end
+        else
+          stepSizeSsmX[c] = blockStepSize_r;
+      end
+      else begin // curBlockMode_r == MODE_MPPF
+        compBits[c] = ~mppfIndex_r ? bitsPerCompA[c] : bitsPerCompB[c];
+        case (bits_per_component_coded)
+          2'd0: stepSizeSsmX[c] = ((blockCsc_r == 2'd1) & (c > 0)) ? 4'd9 - compBits[c] : 4'd8 - compBits[c];
+          2'd1: stepSizeSsmX[c] = ((blockCsc_r == 2'd1) & (c > 0)) ? 4'd11 - compBits[c] : 4'd10 - compBits[c];
+          2'd2: stepSizeSsmX[c] = ((blockCsc_r == 2'd1) & (c > 0)) ? 4'd13 - compBits[c] : 4'd12 - compBits[c];
+        endcase
+      end
+      case (bits_per_component_coded)
+        2'd0: mppQuantBits_X[c] = ((blockCsc_r == 2'd1) & (c > 0)) ? 4'd9 - stepSizeSsmX[c] : 4'd8 - stepSizeSsmX[c];
+        2'd1: mppQuantBits_X[c] = ((blockCsc_r == 2'd1) & (c > 0)) ? 4'd11 - stepSizeSsmX[c] : 4'd10 - stepSizeSsmX[c];
+        2'd2: mppQuantBits_X[c] = ((blockCsc_r == 2'd1) & (c > 0)) ? 4'd13 - stepSizeSsmX[c] : 4'd12 - stepSizeSsmX[c];
+      endcase
+      case(chroma_format)
+        // 4:4:4
+        2'd0:
+          for (s = 4; s < 16; s = s + 1) begin // See g_mppSsmMapping_444 in C
+            case(mppQuantBits_X[c])
+              4'd1: val = data_to_be_parsed[curSubstream][bit_pointer[curSubstream]];
+              4'd2: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:2], 2);
+              4'd3: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:3], 3);
+              4'd4: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:4], 4);
+              4'd5: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5);
+              4'd6: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
+              4'd7: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:7], 7);
+              4'd8: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:8], 8);
+              4'd9: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:9], 9);
+              4'd10: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:10], 10);
+              4'd11: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:11], 11);
+              4'd12: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:12], 12);
+              4'd13: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:13], 13);
+              4'd14: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:14], 14);
+              4'd15: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:15], 15);
+            endcase
+            bit_pointer[curSubstream] = bit_pointer[curSubstream] + mppQuantBits_X[c];
+            pQuant[c][s] = $signed({1'b0, val}) - (16'sd1 << (mppQuantBits_X[c] - 1'b1));
+          end
+        // 4:2:2 TBD
+        // 4:2:0 TBD              
+      endcase
     end
     if ((curBlockMode_r == MODE_TRANSFORM) | (curBlockMode_r == MODE_BP)) begin // DecodeResiduals in C
       for (ecgIdx = 0; ecgIdx < 4; ecgIdx = ecgIdx + 1) begin
@@ -719,7 +893,8 @@ always @ (posedge clk or negedge rst_n)
     parse_data_dl <= 1'b0;
   else
     parse_data_dl <= parse_data;
-	
+
+reg signed [15:0] mppBlockQuant_r [2:0][15:0]; // TBD bit width of each element of the array
 reg signed [15:0] pQuant_r [2:0][15:0]; // TBD bit width of each element of the array
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
@@ -734,7 +909,19 @@ always @ (posedge clk or negedge rst_n)
     if (parse_data)
       for (c = 0; c < 3; c = c + 1)
         for (s = 0; s < compNumSamples[c]; s = s + 1)
-          pQuant_r[c][s] <= pQuant[c][s];
+          if ((curBlockMode_r == MODE_MPP) | (curBlockMode_r == MODE_MPPF))
+            case (chroma_format)
+              // 4:4:4
+              2'd0: 
+                if (s < 4) // See g_mppSsmMapping_444 in C
+                  pQuant_r[c][s] <= mppBlockQuant_r[c][s];
+                else
+                  pQuant_r[c][s] <= pQuant[c][s];
+              // 4:2:2 TBD
+              // 4:2:0 TBD
+            endcase
+          else
+            pQuant_r[c][s] <= pQuant[c][s];
 
 reg [6:0] bpv2x2_0_r;
 reg [6:0] bpv2x2 [3:0];
@@ -767,6 +954,12 @@ always @ (posedge clk) begin
       bpv2x1_r[sb][0] <= bpv2x1[sb][0];
       bpv2x1_r[sb][1] <= bpv2x1[sb][1];
     end
+    blockCsc_r <= nextBlockCsc;
+    blockStepSize_r <= nextBlockStepSize;
+    for (c = 0; c < 3; c = c + 1)
+      for (s = 0; s < compNumSamples[c]; s = s + 1)
+        mppBlockQuant_r[c][s] <= mppNextBlockQuant[c][s];
+    mppfIndex_r <= mppfIndexNextBlock;
   end
 end
 
@@ -861,6 +1054,7 @@ always @ (posedge clk)
   end
 assign prevBlockBitsWithoutPadding_valid = blockBits_valid_dl;
 
+assign mpp_ctrl_valid = parse_data;
 
 endmodule
 

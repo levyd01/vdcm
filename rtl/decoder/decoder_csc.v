@@ -52,7 +52,7 @@ generate
     end
 endgenerate
 
-integer cp, ci, ri;
+/*
 reg signed [13:0] temp;
 reg signed [13:0] R, G, B;
 reg [11:0] dst_r [1:0][7:0];
@@ -92,6 +92,33 @@ always @ (*)
           end
       endcase
     end
+*/
+
+wire [11:0] dst_r [1:0][7:0];
+wire [11:0] dst_g [1:0][7:0];
+wire [11:0] dst_b [1:0][7:0];
+
+generate
+  for (gr=0; gr<2; gr=gr+1) begin : gen_conv_to_rgb_row
+    for (gc=0; gc<8; gc=gc+1) begin : gen_conv_to_rgb_col
+      ycocg2rgb ycocg2rgb_u
+      (
+        .maxPoint         (maxPoint),
+        .src_y            (src_y[gr][gc]),
+        .src_co           (src_co[gr][gc]),
+        .src_cg           (src_cg[gr][gc]),
+        .dst_r            (dst_r[gr][gc]),
+        .dst_g            (dst_g[gr][gc]),
+        .dst_b            (dst_b[gr][gc])
+      );
+    end
+  end
+endgenerate
+
+
+
+
+integer cp, ci, ri;
 
 reg [13:0] rgb_reg [2:0][1:0][7:0];
 always @ (posedge clk)

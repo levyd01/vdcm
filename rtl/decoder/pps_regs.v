@@ -27,7 +27,7 @@ module pps_regs
   output reg [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-1:0] slice_num_px,
   output reg [9:0] bits_per_pixel,
   output reg [1:0] bits_per_component_coded, // 0: 8 bpc, 1: 10 bpc, 2: 12 bpc
-  output reg source_color_space, // 0: RGB, 1: YUV
+  output reg [1:0] source_color_space, // Image original color space 0: RGB, 1: YCoCg, 2: YCbCr (YCoCg is impossible)
   output reg [1:0] chroma_format, // 0: 4:4:4, 1: 4:2:2, 2: 4:2:0
   output reg [15:0] chunk_size,
   output reg [15:0] rc_buffer_init_size,
@@ -65,7 +65,7 @@ module pps_regs
   output reg [$clog2(MAX_SLICE_HEIGHT)+16-1:0] b0,
   output reg [8+9-1:0] rcOffsetInit,
   output reg [3:0] maxAdjBits,
-  output wire [1:0] csc, // (0: RGB), 1: YCoCg, 2: YCbCr - 0 impossible
+  output wire [1:0] csc, // VDCM internal color space. 0: RGB, 1: YCoCg, 2: YCbCr (RGB is impossible)
   output wire [3*2-1:0] blkHeight_p,
   output wire [3*4-1:0] blkWidth_p,
   output reg [12:0] midPoint,
@@ -154,7 +154,7 @@ always @ (posedge clk)
           slice_num_px <= slice_num_px_a[$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-1:0];
           bits_per_pixel <= {in_data_gated[16*8+:2], in_data_gated[17*8+:8]};
           bits_per_component_coded <= in_data_gated[(19*8+4)+:2];
-          source_color_space <= in_data_gated[(19*8+2)+:2];
+          source_color_space <= (in_data_gated[(19*8+2)+:2] == 2'b0) ? 2'd0 : 2'd2; // Color code: 0: RGB, 2: YCbCr
           chroma_format <= in_data_gated[(19*8+0)+:2];
           chunk_size <= {in_data_gated[22*8+:2], in_data_gated[23*8+:8]};
           rc_buffer_init_size <= {in_data_gated[26*8+:8], in_data_gated[27*8+:8]};

@@ -1,3 +1,18 @@
+// The pixel buffer saves data in the original picture color space. But decoding is not done in RGB.
+// Original color space possibilities are: RGB (0) or YCbCr (2)
+// Decoding color space possibilies are: YCoCg (1) or YCbCr (2)
+// csc = decoding color space
+// When writing to the pixel buffer:
+//   if csc = YCoCg then convert to RGB before writing.
+//   if csc = YCbCr, no conversion is needed.
+// Inside the buffer:
+//   if csc = YCoCg, it means that the original color space is RGB, so the pixel buffer is in RGB.
+//   if csc = YCbCr, it means that the original color space is YCbCr, so the pixel buffer is in YCbCr.
+// When reading from the pixel buffer:
+//   if csc = YCoCg then convert to YCoCg begore processing.
+//   if csc = YCbCr then no conversion is needed.
+
+
 module pixels_buf
 #(
   parameter MAX_SLICE_WIDTH         = 2560
@@ -18,6 +33,7 @@ module pixels_buf
   input decoding_proc_rd_req,
   output wire [16*3*14-1:0] pixelsAboveForTrans_p, // 16 pixels for Transform (4 to the left above the current, 8 exactly above, and 4 to the right above)
   output wire [33*3*14-1:0] pixelsAboveForBp_p, // 33 pixels above for BP (A0 to A7 and B0 to B24)
+  output wire [8*3*14-1:0] pixelsAboveForMpp_p, // 8 pixels above for MPP (for non-FBLS mean calculation)
   output wire decoding_proc_rd_valid
 
 );
@@ -46,46 +62,26 @@ generate
   end
 endgenerate
 
-integer cp, ci;
-reg signed [13:0] temp_wr;
-reg signed [13:0] R_wr, G_wr, B_wr;
-reg [11:0] dst_r [7:0];
-reg [11:0] dst_g [7:0];
-reg [11:0] dst_b [7:0];
-always @ (*)
-  for (ci=0; ci<8; ci=ci+1) begin
-    temp_wr = src_y[ci] - (src_cg[ci] >>> 1);
-    G_wr = src_cg[ci] + temp_wr;
-    B_wr = temp_wr - (src_co[ci] >>> 1);
-    R_wr = B_wr + src_co[ci];
-    case (maxPoint)
-      12'd255:
-        begin
-          if (G_wr[13]) dst_g[ci] = 12'd0; else if (|G_wr[12:8]) dst_g[ci] = 12'd255; else dst_g[ci] = G_wr[11:0];
-          if (B_wr[13]) dst_b[ci] = 12'd0; else if (|B_wr[12:8]) dst_b[ci] = 12'd255; else dst_b[ci] = B_wr[11:0];
-          if (R_wr[13]) dst_r[ci] = 12'd0; else if (|R_wr[12:8]) dst_r[ci] = 12'd255; else dst_r[ci] = R_wr[11:0];
-        end
-      12'd1023:
-        begin
-          if (G_wr[13]) dst_g[ci] = 12'd0; else if (|G_wr[12:10]) dst_g[ci] = 12'd1023; else dst_g[ci] = G_wr[11:0];
-          if (B_wr[13]) dst_b[ci] = 12'd0; else if (|B_wr[12:10]) dst_b[ci] = 12'd1023; else dst_b[ci] = B_wr[11:0];
-          if (R_wr[13]) dst_r[ci] = 12'd0; else if (|R_wr[12:10]) dst_r[ci] = 12'd1023; else dst_r[ci] = R_wr[11:0];
-        end
-      12'd1023:
-        begin
-          if (G_wr[13]) dst_g[ci] = 12'd0; else if (G_wr[12]) dst_g[ci] = 12'd4095; else dst_g[ci] = G_wr[11:0];
-          if (B_wr[13]) dst_b[ci] = 12'd0; else if (B_wr[12]) dst_b[ci] = 12'd4095; else dst_b[ci] = B_wr[11:0];
-          if (R_wr[13]) dst_r[ci] = 12'd0; else if (R_wr[12]) dst_r[ci] = 12'd4095; else dst_r[ci] = R_wr[11:0];
-        end
-      default:
-        begin
-          if (G_wr[13]) dst_g[ci] = 12'd0; else if (|G_wr[12:8]) dst_g[ci] = 12'd255; else dst_g[ci] = G_wr[11:0];
-          if (B_wr[13]) dst_b[ci] = 12'd0; else if (|B_wr[12:8]) dst_b[ci] = 12'd255; else dst_b[ci] = B_wr[11:0];
-          if (R_wr[13]) dst_r[ci] = 12'd0; else if (|R_wr[12:8]) dst_r[ci] = 12'd255; else dst_r[ci] = R_wr[11:0];
-        end
-    endcase
+wire [11:0] dst_r [7:0];
+wire [11:0] dst_g [7:0];
+wire [11:0] dst_b [7:0];
+generate
+  for (gc=0; gc<8; gc=gc+1) begin : gen_rgb_gc
+    ycocg2rgb ycocg2rgb_u
+      (
+        .maxPoint         (maxPoint),
+        .src_y            (src_y[gc]),
+        .src_co           (src_co[gc]),
+        .src_cg           (src_cg[gc]),
+        .dst_r            (dst_r[gc]),
+        .dst_g            (dst_g[gc]),
+        .dst_b            (dst_b[gc])
+      );
   end
+endgenerate
 
+// If csc is YCoCg, it means that the original format is RGB -> convert to RGB. Otherwise (csc = YCbCr), no conversion is needed
+integer cp, ci;
 reg [11:0] rgb_reg [2:0][7:0];
 always @ (posedge clk)
   if (pReconBlk_valid)
@@ -127,7 +123,7 @@ always @ (posedge clk)
 wire wr_pixels_buf_en;
 wire [3*4*12-1:0] wr_pixels_buf_data;
 
-assign wr_pixels_buf_en = |pReconBlk_valid_dl[6:5/*4:3*/];
+assign wr_pixels_buf_en = |pReconBlk_valid_dl[6:5];
 
 generate
   for (cpi=0; cpi<3; cpi=cpi+1) begin : gen_wr_pixels_buf_data_cpi
@@ -218,31 +214,28 @@ always @ (posedge clk)
     for (c = 0; c < 3; c = c + 1)
       for (p = 0; p < 4; p = p + 1)      
         pixelFromRam[c][p] <= ram_data_rd[(c*4+p)*12+:12];
-    
-reg signed [13:0] pixelForDecodingProc [2:0][3:0];
-reg signed [13:0] temp_rd;
-reg signed [13:0] R_rd;
-reg signed [13:0] G_rd;
-reg signed [13:0] B_rd;
-reg signed [13:0] Y;
-reg signed [13:0] Co;
-reg signed [13:0] Cg;
-always @ (*)
-  for (p = 0; p < 4; p = p + 1) 
-    if (csc == 2'd1) begin
-      R_rd = $signed({1'b0, pixelFromRam[0][p]});
-      G_rd = $signed({1'b0, pixelFromRam[1][p]});
-      B_rd = $signed({1'b0, pixelFromRam[2][p]});
-      Co = R_rd - B_rd;
-      temp_rd = B_rd + (Co>>>1);
-      Cg = G_rd - temp_rd;
-      Y = temp_rd + (Cg>>>1);
-      pixelForDecodingProc[0][p] = Y;
-      pixelForDecodingProc[1][p] = Co;
-      pixelForDecodingProc[2][p] = Cg;
+
+// Convert from RGB to YCoCg
+genvar gp;
+wire signed [13:0] pixelForDecodingProc [2:0][3:0];
+wire signed [13:0] pixelConvertedToYCoCg [2:0][3:0];
+generate
+  for (gp = 0; gp < 4; gp = gp + 1) begin : gen_rgb2ycocg
+    rgb2ycocg rgb2ycocg_u
+    (
+      .src_r   (pixelFromRam[0][gp]),
+      .src_g   (pixelFromRam[1][gp]),
+      .src_b   (pixelFromRam[2][gp]),
+      .dst_y   (pixelConvertedToYCoCg[0][gp]),
+      .dst_co  (pixelConvertedToYCoCg[1][gp]),
+      .dst_cg  (pixelConvertedToYCoCg[2][gp])
+    );
+    for (cpi=0; cpi<3; cpi=cpi+1) begin : gen_pixelForDecodingProc_cpi
+      assign pixelForDecodingProc[cpi][gp] = (csc == 2'd1) ? pixelConvertedToYCoCg[cpi][gp] : pixelFromRam[cpi][gp];
     end
-    // else TBD
-    
+  end
+endgenerate
+
 reg ram_data_valid_dl;
 always @ (posedge clk)
   ram_data_valid_dl <= ram_data_valid;
@@ -266,6 +259,9 @@ generate
     end
     for (coli = 0; coli < 16; coli = coli + 1) begin : gen_pixelsAboveForTransform_col
       assign pixelsAboveForTrans_p[(16*compi + coli)*14+:14] = pixelsShiftReg[compi][31-coli];
+    end
+    for (coli = 0; coli < 8; coli = coli + 1) begin : gen_pixelsAboveForMpp_col
+      assign pixelsAboveForMpp_p[(8*compi + coli)*14+:14] = pixelsShiftReg[compi][/*23*/31-coli];
     end
   end
 endgenerate

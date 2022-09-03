@@ -38,12 +38,13 @@ module slice_decoder
   input wire [16*8-1:0] target_rate_delta_lut_p,
   input wire [3:0] chunk_adj_bits,
   input wire [3:0] maxAdjBits,
-  input wire [1:0] csc, // 0: RGB, 1: YCoCg, 2: YCbCr
+  input wire [1:0] source_color_space, // Image original color space 0: RGB, 1: YCoCg, 2: YCbCr (YCoCg is impossible)
+  input wire [1:0] csc, // Color Space before CSC conversion: 0: RGB, 1: YCoCg, 2: YCbCr (RGB is impossible)
   input wire [3*2-1:0] blkHeight_p,
   input wire [3*4-1:0] blkWidth_p,
   input wire [3*5-1:0] compNumSamples_p,
   input wire [1:0] bits_per_component_coded,
-  input wire [1:0] chroma_format, // 0: RGB, 1: YCoCg, 2: YCbCr
+  input wire [1:0] chroma_format, // 0: 4:4:4, 1: 4:2:2, 2: 4:2:0
   input wire [12:0] midPoint,
   input wire [12:0] maxPoint,
   input wire [3*14-1:0] minPoint_p,
@@ -194,6 +195,10 @@ wire [2:0] bestIntraPredIdx;
 wire [7*4-1:0] bpv2x2_p;
 wire [7*4*2-1:0] bpv2x1_p;
 wire [3:0] bpvTable;
+wire [1:0] blockCsc;
+wire [3:0] blockStepSize;
+wire mppfIndex;
+wire mpp_ctrl_valid;
 
 syntax_parser
 #(
@@ -209,6 +214,8 @@ syntax_parser_u
   .chroma_format                (chroma_format),
   .rc_stuffing_bits             (rc_stuffing_bits),
   .rcStuffingBitsX9             (rcStuffingBitsX9),
+  .source_color_space           (source_color_space),
+  .bits_per_component_coded     (bits_per_component_coded),
                                 
   .data_to_be_parsed_p          (data_to_be_parsed_p),
   .nextBlockIsFls               (nextBlockIsFls),
@@ -238,8 +245,11 @@ syntax_parser_u
   .blockBits                    (blockBits),
   .blockBits_valid              (blockBits_valid),
   .prevBlockBitsWithoutPadding  (prevBlockBitsWithoutPadding),
-  .prevBlockBitsWithoutPadding_valid (prevBlockBitsWithoutPadding_valid)
-  
+  .prevBlockBitsWithoutPadding_valid (prevBlockBitsWithoutPadding_valid),
+  .blockCsc_r                   (blockCsc),
+  .blockStepSize_r              (blockStepSize),
+  .mppfIndex_r                  (mppfIndex),
+  .mpp_ctrl_valid               (mpp_ctrl_valid)
 );
 
 wire pReconBlk_valid;
@@ -297,6 +307,10 @@ decoding_processor_u
   .masterQp_valid               (masterQp_valid),
   .minQp                        (minQp),
   .maxQp                        (maxQp),
+  .blockCsc                     (blockCsc),
+  .blockStepSize                (blockStepSize),
+  .mppfIndex                    (mppfIndex),
+  .mpp_ctrl_valid               (mpp_ctrl_valid),
   
   .pReconBlk_valid              (pReconBlk_valid),
   .pReconBlk_p                  (pReconBlk_p)

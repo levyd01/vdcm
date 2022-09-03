@@ -434,8 +434,10 @@ always @ (*)
 
 parameter [2:0] targetRateLutBits = 3'd4; // Defined in Table 4-17 in spec. Called g_rc_targetRateBits in C model
 parameter [4:0] targetRateShift = rcFullnessRangeBits - targetRateLutBits; // Called shift in spec Table 4-18.
+wire [16:0] rcFullnessPlusDelta;
+assign rcFullnessPlusDelta = rcFullness_d + (1'b1 << (targetRateShift - 1'b1));
 wire [4:0] LutTargetRateDeltaIndexTemp;
-assign LutTargetRateDeltaIndexTemp = (rcFullness_d + (1'b1 << (targetRateShift - 1'b1))) >> targetRateShift;
+assign LutTargetRateDeltaIndexTemp[4:0] = rcFullnessPlusDelta >> targetRateShift;
 
 parameter [3:0] clipMax = (1'b1 << targetRateLutBits) - 1'b1;
 reg [3:0] LutTargetRateDeltaIndex;

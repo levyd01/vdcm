@@ -35,7 +35,7 @@ module decoding_processor
 
   input wire [3:0] bpvTable,
   input wire underflowPreventionMode,
-  input wire [1:0] csc, // 0: RGB, 1: YCoCg, 2: YCbCr
+  input wire [1:0] csc, // decoding color space 0: RGB, 1: YCoCg, 2: YCbCr (RGB impossible)
   input wire [3*2-1:0] blkHeight_p,
   input wire [3*4-1:0] blkWidth_p,
   input wire [1:0] bits_per_component_coded,
@@ -54,6 +54,10 @@ module decoding_processor
   input wire masterQp_valid,
   input wire [5:0] minQp,
   input wire [8:0] maxQp,
+  input wire [1:0] blockCsc,
+  input wire [3:0] blockStepSize,
+  input wire mppfIndex,
+  input wire mpp_ctrl_valid,
     
   output wire pReconBlk_valid,
   output reg [2*8*3*14-1:0] pReconBlk_p
@@ -193,6 +197,45 @@ bp_mode bp_mode_u
   
 );
 
+wire mpp_pReconBlk_valid;
+wire [2*8*3*14-1:0] mpp_pReconBlk_p;
+wire [8*3*14-1:0] pixelsAboveForMpp_p;
+
+mpp_mode mpp_mode_u
+(
+  .clk                          (clk),
+  .rst_n                        (rst_n),
+  .flush                        (flush),
+  
+  .chroma_format                (chroma_format),
+  .csc                          (csc),
+  .bits_per_component_coded     (bits_per_component_coded),
+  .midPoint                     (midPoint),
+  .maxPoint                     (maxPoint),
+
+  .sos                          (sos),
+  .fbls                         (fbls),
+  
+  .blockMode                    (blockMode),
+  .blockCsc                     (blockCsc),
+  .blockStepSize                (blockStepSize),
+  .mppfIndex                    (mppfIndex),
+  .mpp_ctrl_valid               (mpp_ctrl_valid),
+  
+  .pQuant_p                     (pQuant_p),
+  .pQuant_valid                 (pQuant_valid),
+
+  .pReconLeftBlk_p              (pReconBlk_p),
+  .pReconLeftBlk_valid          (pReconBlk_valid),
+  .pReconAboveBlk_p             (pixelsAboveForMpp_p),
+  .pReconAboveBlk_valid         (pixels_buf_rd_valid),
+
+  .pReconBlk_valid              (mpp_pReconBlk_valid),
+  .pReconBlk_p                  (mpp_pReconBlk_p)
+
+);
+
+
 // Mux between all modes
 // Table 4-80 in spec
 parameter MODE_TRANSFORM = 3'd0;
@@ -204,6 +247,7 @@ always @ (*)
   case (prevBlockMode)
     MODE_TRANSFORM:        pReconBlk_p = tm_pReconBlk_p;
     MODE_BP, MODE_BP_SKIP: pReconBlk_p = bp_pReconBlk_p;
+    MODE_MPP, MODE_MPPF  : pReconBlk_p = mpp_pReconBlk_p;
     default:               pReconBlk_p = tm_pReconBlk_p;
   endcase
 assign pReconBlk_valid = tm_pReconBlk_valid; // Assume that all the valid come at the same clock cycle
@@ -236,6 +280,7 @@ pixels_buf_u
   .decoding_proc_rd_req         (pixels_buf_rd_req),
   .pixelsAboveForTrans_p        (pixelsAboveForTrans_p),
   .pixelsAboveForBp_p           (pixelsAboveForBp_p),
+  .pixelsAboveForMpp_p          (pixelsAboveForMpp_p),
   .decoding_proc_rd_valid       (pixels_buf_rd_valid)
 );
 

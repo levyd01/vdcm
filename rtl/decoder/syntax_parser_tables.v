@@ -1229,3 +1229,41 @@ assign vec_sm_bitsReq_2_chroma_inv[252] = 8'd80;
 assign vec_sm_bitsReq_2_chroma_inv[253] = 8'd16;
 assign vec_sm_bitsReq_2_chroma_inv[254] = 8'd64;
 assign vec_sm_bitsReq_2_chroma_inv[255] = 8'd0;
+
+wire [3:0] stepSizeMapCo [11:0];
+assign stepSizeMapCo[0]  = 4'd1;
+assign stepSizeMapCo[1]  = 4'd3;
+assign stepSizeMapCo[2]  = 4'd4;
+assign stepSizeMapCo[3]  = 4'd5;
+assign stepSizeMapCo[4]  = 4'd6;
+assign stepSizeMapCo[5]  = 4'd7;
+assign stepSizeMapCo[6]  = 4'd7;
+assign stepSizeMapCo[7]  = 4'd7;
+assign stepSizeMapCo[8]  = 4'd8;
+assign stepSizeMapCo[9]  = 4'd9;
+assign stepSizeMapCo[10] = 4'd10;
+assign stepSizeMapCo[11] = 4'd11;
+
+wire [3:0] stepSizeMapCg [11:0];
+assign stepSizeMapCg[0]  = 4'd1;
+assign stepSizeMapCg[1]  = 4'd2;
+assign stepSizeMapCg[2]  = 4'd3;
+assign stepSizeMapCg[3]  = 4'd4;
+assign stepSizeMapCg[4]  = 4'd5;
+assign stepSizeMapCg[5]  = 4'd6;
+assign stepSizeMapCg[6]  = 4'd7;
+assign stepSizeMapCg[7]  = 4'd7;
+assign stepSizeMapCg[8]  = 4'd8;
+assign stepSizeMapCg[9]  = 4'd9;
+assign stepSizeMapCg[10] = 4'd10;
+assign stepSizeMapCg[11] = 4'd11;
+
+wire [1:0] bitsPerCompA [2:0];
+assign bitsPerCompA[0] = 2'd1;
+assign bitsPerCompA[1] = 2'd2;
+assign bitsPerCompA[2] = 2'd1;
+
+wire [1:0] bitsPerCompB [2:0];
+assign bitsPerCompB[0] = 2'd2;
+assign bitsPerCompB[1] = 2'd1;
+assign bitsPerCompB[2] = 2'd1;

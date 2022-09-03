@@ -63,7 +63,7 @@ wire [$clog2(MAX_SLICE_HEIGHT)-1:0] slice_height;
 wire [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-1:0] slice_num_px;
 wire [9:0] bits_per_pixel;
 wire [1:0] bits_per_component_coded;
-wire source_color_space;
+wire [1:0] source_color_space; // Image original color space 0: RGB, 1: YCoCg, 2: YCbCr (YCoCg is impossible)
 wire [1:0] chroma_format;
 wire [15:0] chunk_size;
 wire [15:0] rc_buffer_init_size;
@@ -103,7 +103,7 @@ wire [$clog2(MAX_SLICE_WIDTH)-1:0] origSliceWidth;
 wire [$clog2(MAX_SLICE_HEIGHT)+16-1:0] b0;
 wire [8+9-1:0] rcOffsetInit;
 wire [3:0] maxAdjBits;
-wire [1:0] csc; // 0: RGB, 1: YCoCg, 2: YCbCr
+wire [1:0] csc; // Color Space before CSC conversion: 1: YCoCg, 2: YCbCr
 wire [12:0] midPoint;
 wire [12:0] maxPoint;
 wire [3*14-1:0] minPoint_p;
@@ -299,6 +299,7 @@ generate
       .partitionSize_p                (partitionSize_p),
       .rcOffsetThreshold              (rcOffsetThreshold),
       .sliceNumDwords                 (sliceNumDwords),
+      .source_color_space             (source_color_space),
       
       .in_data                        (slice_demux_data_p[s*256+:256]),
       .in_sof                         (slice_demux_sof[s]),

@@ -55,13 +55,19 @@ with open('debugTracerDecoder.txt') as fr:
             if (start == 1):
                 start = 0
         # pQuant
-        elif ((line.find("BP: QuantBlk[") != -1) or (line.find("XFORM: QuantBlk[") != -1)):
+        elif ((line.find("BP: QuantBlk[") != -1) or (line.find("XFORM: QuantBlk[") != -1) or (line.find("MPP: qResBlk[") != -1) or (line.find("MPPF: Quant[") != -1)):
             pos_of_2nd_opening_bracket = find_nth(line, '[', 2)
             pos_of_2nd_closing_bracket = find_nth(line, ']', 2)
             f_pQuant[s].write(line[(pos_of_2nd_opening_bracket+1):pos_of_2nd_closing_bracket])
-            if ((line.find("BP: QuantBlk[0") != -1) or (line.find("XFORM: QuantBlk[0") != -1) or (line.find("BP: QuantBlk[1") != -1) or (line.find("XFORM: QuantBlk[1") != -1)):
+            if ((line.find("BP: QuantBlk[0") != -1) or (line.find("XFORM: QuantBlk[0") != -1) or \
+                                                       (line.find("MPP: qResBlk[0") != -1) or \
+                                                       (line.find("MPPF: Quant[0") != -1) or \
+                                                       (line.find("BP: QuantBlk[1") != -1) or \
+                                                       (line.find("XFORM: QuantBlk[1") != -1) or \
+                                                       (line.find("MPP: qResBlk[1") != -1) or \
+                                                       (line.find("MPPF: Quant[1") != -1)):
                 f_pQuant[s].write(', ')
-            elif ((line.find("BP: QuantBlk[2") != -1) or (line.find("XFORM: QuantBlk[2") != -1)):
+            elif ((line.find("BP: QuantBlk[2") != -1) or (line.find("XFORM: QuantBlk[2") != -1) or (line.find("MPP: qResBlk[2") != -1) or (line.find("MPPF: Quant[2") != -1)):
                 f_pQuant[s].write('\n')
         # qp
         elif (line.find("RC: qp = ") != -1):

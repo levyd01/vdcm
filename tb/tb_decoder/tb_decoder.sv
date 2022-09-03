@@ -264,11 +264,9 @@ endtask
 
 genvar gs;
 string s_idx_str;
+integer slice_cnt [MAX_NBR_SLICES-1:0];
 generate
-  for (gs=0; gs<MAX_NBR_SLICES; gs=gs+1) begin : slice_validation
-  
-  
-    integer slice_cnt [MAX_NBR_SLICES-1:0];
+  for (gs=0; gs<MAX_NBR_SLICES; gs=gs+1) begin : gen_slice_validation
     string slice_cnt_str;
     always @ (negedge rst_n or negedge uut.gen_slice_decoder[gs].slice_decoder_u.sos)
       if (gs < chunks_per_line)
@@ -303,7 +301,9 @@ generate
       if (gs < chunks_per_line)
         if ((uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.pQuant_r_valid) & // Quantized residuals only present when not in MODE_BP_SKIP
                     ((uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.blockMode == uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.MODE_TRANSFORM) | 
-                     (uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.blockMode == uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.MODE_BP)))
+                     (uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.blockMode == uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.MODE_BP) |
+                     (uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.blockMode == uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.MODE_MPP) |
+                     (uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.blockMode == uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.MODE_MPPF)))
           if (!$feof(file_pQuant[gs])) begin  
             fd = $fscanf(file_pQuant[gs],"%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d",
                          pQuant_g[0][0], pQuant_g[0][1], pQuant_g[0][2], pQuant_g[0][3], pQuant_g[0][4], pQuant_g[0][5], pQuant_g[0][6], pQuant_g[0][7],
