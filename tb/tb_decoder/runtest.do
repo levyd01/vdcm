@@ -1,3 +1,3 @@
-vsim -gui -t ns -novopt work.tb_decoder
+vsim -gui -t ps -novopt work.tb_decoder
 run -all 
 quit -f

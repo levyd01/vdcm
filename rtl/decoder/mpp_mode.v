@@ -278,7 +278,7 @@ always @ (posedge clk)
             mean[c][sb] <= 14'd0;
           else
             mean[c][sb] <= middle[c][sb];
-        else if (fbls_dl) // Use left reconstructed pixels (see page 126 of spec)
+        else if (fbls/*_dl*/) // Use left reconstructed pixels (see page 126 of spec)
           if ((chroma_format != 2'd0) & (c > 0) & (sb > numSubBlocksChroma))
             mean[c][sb] <= 14'd0;
           else if ((chroma_format == 2'd2) & (c > 0)) // 4:2:0 average of only two pixels of row 0
@@ -311,7 +311,7 @@ reg signed [13:0] mean_converted [2:0][3:0];
 always @ (*)
   for (c = 0; c < 3; c = c + 1)
     for (sb = 0; sb < 4; sb = sb + 1)
-      mean_converted[c][sb] = ((blockCsc_dl == 2'd1) & ~fbls_dl) ? $signed({2'b0, mean_ycocg[c][sb]}) : mean[c][sb];
+      mean_converted[c][sb] = ((blockCsc_dl == 2'd1) & ~fbls/*_dl*/) ? $signed({2'b0, mean_ycocg[c][sb]}) : mean[c][sb];
 
 reg signed [15:0] curBias [2:0];
 always @ (*)

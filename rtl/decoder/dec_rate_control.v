@@ -20,6 +20,8 @@ module dec_rate_control
   input wire sof,
   input wire sos,
   input wire eoc,
+  input wire substreams123_parsed,
+  input wire isFirstBlock,
   input wire isLastBlock,
   input wire fbls,
   input wire isEvenChunk,
@@ -176,27 +178,23 @@ generate
   end
 endgenerate
 
+wire blockBits_valid_i;
+assign blockBits_valid_i = blockBits_valid & (sos_fsm >= 2'd2);
+
 reg [6:0] blockBits_valid_dl;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     blockBits_valid_dl <= 7'b0;
   else
-    blockBits_valid_dl <= {blockBits_valid_dl[5:0], blockBits_valid};
+    blockBits_valid_dl <= {blockBits_valid_dl[5:0], blockBits_valid_i};
 	
 reg isLastBlock_dl;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     isLastBlock_dl <= 1'b0;
-  else if (blockBits_valid)
+  else if (blockBits_valid_i)
     isLastBlock_dl <= isLastBlock;
-    
-reg fbls_dl;
-always @ (posedge clk or negedge rst_n)
-  if (~rst_n)
-    fbls_dl <= 1'b1;
-  else if (blockBits_valid)
-    fbls_dl <= fbls;
-    
+
 reg [3:0] sos_dl;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
@@ -212,14 +210,14 @@ assign sos_pulse_dl = {sos_dl[2] & ~sos_dl[3], sos_dl[1] & ~sos_dl[2], sos_dl[0]
     
 reg [$clog2(MAX_SLICE_HEIGHT)+16-1:0] sliceBitsRemaining;
 always @ (posedge clk)
-  if (sof | (blockBits_valid & isLastBlock_dl))
+  if (sos)
     sliceBitsRemaining <= b0 - num_extra_mux_bits;
   else if (blockBits_valid)
     sliceBitsRemaining <= sliceBitsRemaining - blockBits;
 
 reg signed [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT):0] slicePixelsRemaining;
 always @ (posedge clk)
-  if (sof | (blockBits_valid & isLastBlock_dl))
+  if (sos)
     slicePixelsRemaining <= $signed({1'b0, slice_num_px});
   else if (blockBits_valid)
     slicePixelsRemaining <= slicePixelsRemaining - 6'sd16;
@@ -267,7 +265,7 @@ end
 always @ (posedge clk)
   if (sos_pulse)
     bufferFullness_r <= 16'd0;
-  else if (blockBits_valid)
+  else if (blockBits_valid_i)
     bufferFullness_r <= bufferFullness_i;
 	
 // Check overflow or underflow of bufferFullness_r
@@ -291,7 +289,7 @@ reg signed [15:0] rcOffsetInit;
 always @ (posedge clk)
   if (sos_pulse)
     rcOffsetInit <= rcOffsetInitAtSos;
-  else if (blockBits_valid & (numBlocksCoded + 1'b1 <= rc_init_tx_delay))
+  else if (blockBits_valid_i & (numBlocksCoded + 1'b1 <= rc_init_tx_delay))
     rcOffsetInit <= rcOffsetInit - {1'b0, bits_per_pixel};
 // update rcOffset
 reg signed [15:0] rcOffset;
@@ -315,14 +313,14 @@ always @ (posedge clk)
     rcOffset <= 16'sd0;
     bufferFracBitsAccum <= 16'd0;
   end
-  else if (blockBits_valid & ~sos & (numBlocksCoded + 1'b1 >= rcOffsetThreshold)) begin
+  else if (blockBits_valid_i & ~sos & (numBlocksCoded + 1'b1 >= rcOffsetThreshold)) begin
     rcOffset <= rcOffset_d;
     bufferFracBitsAccum <= bufferFracBitsAccum_d[15:0];
   end
   
 // unscaled rcFullness = rc_fullness_scale * (bufferFullness_r + rcOffset + rcOffsetInit)
 wire signed [1+8+16+1+1-1:0] unscaledRcFullness;
-assign unscaledRcFullness = $signed({1'b0, rc_fullness_scale}) * ($signed({1'b0, bufferFullness_r}) + rcOffset + rcOffsetInit);
+assign unscaledRcFullness = $signed({1'b0, rc_fullness_scale}) * ($signed({1'b0, bufferFullness_r}) + rcOffset + (isLastBlock & (bufferFracBitsAccum >= (1'b1 << 15))) + rcOffsetInit);
 wire signed [1+8+16+1+1-4-1:0] unscaledRcFullnessShifted;
 assign unscaledRcFullnessShifted = unscaledRcFullness >>> 4;
 
@@ -356,11 +354,11 @@ always @ (posedge clk)
 reg [7:0] targetRateScale;
 reg [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-1:0] targetRateThreshold;
 always @ (posedge clk)
-  if (sof | (~blockBits_valid & isLastBlock_dl)) begin
+  if (sos) begin
     targetRateScale <= rc_target_rate_scale;
     targetRateThreshold <= rc_target_rate_threshold;
   end
-  else if (sof_dl[0] | blockBits_valid)
+  else if (blockBits_valid)
     if ((slicePixelsRemaining - 6'sd16) < $signed({1'b0, targetRateThreshold})) begin
       targetRateScale <= targetRateScale - 1'b1;
       targetRateThreshold <= 1'b1 << (targetRateScale - 2'd2);
@@ -427,7 +425,7 @@ assign offset = 1'b1 << (scale - 1'b1);
 reg [14:0] baseTargetRate;
 
 always @ (*)
-  if (fbls_dl /*& !(isLastBlock_dl & blockBits_valid_dl[0])*/)
+  if (fbls)
     baseTargetRate = ((baseTargetRateTemp + offset) >> scale) + (rc_target_rate_extra_fbls << 4);
   else
     baseTargetRate = (baseTargetRateTemp + offset) >> scale;
@@ -449,7 +447,7 @@ always @ (*)
 
 reg [15:0] targetRate;
 always @ (posedge clk) 
-  if (blockBits_valid_dl[0] | sos_for_rc)
+  if (blockBits_valid_dl[0] | sos)
     targetRate <= baseTargetRate + target_rate_delta_lut[LutTargetRateDeltaIndex];
 
 reg [6:0] prevQp;
@@ -570,9 +568,9 @@ always @ (*)
     qpClamped = qpUnclamped[8:0];
 
 wire [7:0] flatness_qp_very_flat;
-assign flatness_qp_very_flat = fbls_dl ? flatness_qp_very_flat_fbls : flatness_qp_very_flat_nfbls;
+assign flatness_qp_very_flat = fbls ? flatness_qp_very_flat_fbls : flatness_qp_very_flat_nfbls;
 wire [7:0] flatness_qp_somewhat_flat;
-assign flatness_qp_somewhat_flat = fbls_dl ? flatness_qp_somewhat_flat_fbls : flatness_qp_somewhat_flat_nfbls;
+assign flatness_qp_somewhat_flat = fbls ? flatness_qp_somewhat_flat_fbls : flatness_qp_somewhat_flat_nfbls;
 wire [2:0] lutFlatnessQpIndex;
 assign lutFlatnessQpIndex = (rcFullness >> 13);
 wire [7:0] lutFlatnessQpSelected;
@@ -598,7 +596,7 @@ always @ (posedge clk)
   
 reg [7:0] qpFirstLineAdjusted;
 always @ (*)
-  if (fbls_dl & rcFullnessLorE96Percent & (qpFlatnessAdjusted > maxQp))
+  if (fbls & rcFullnessLorE96Percent & (qpFlatnessAdjusted > maxQp))
     qpFirstLineAdjusted = maxQp;
   else
     qpFirstLineAdjusted = qpFlatnessAdjusted;
@@ -612,7 +610,7 @@ always @ (posedge clk)
     qp <= qpFirstLineAdjusted;
     
   
-assign qp_valid = blockBits_valid;//(blockBits_valid_dl[3] & ~sos) | (sos_dl[3] & blockBits_valid);
+assign qp_valid = substreams123_parsed;
 
 
 

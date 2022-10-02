@@ -23,14 +23,19 @@ module pixels_buf
   input wire flush,
   
   input wire sos,
+  input wire eos,
   input wire [1:0] csc, // 0: RGB, 1: YCoCg, 2: YCbCr
   input wire [$clog2(MAX_SLICE_WIDTH)-1:0] slice_width,
   input wire [12:0] maxPoint,
   
+  input wire parse_substreams, // Early indcation that the pipe runs/stops
+  output wire stall_pull, // indication not to pull new data
+
   input wire pReconBlk_valid,
   input wire [2*8*3*14-1:0] pReconBlk_p,
   
   input decoding_proc_rd_req,
+  input block_push,
   output wire [16*3*14-1:0] pixelsAboveForTrans_p, // 16 pixels for Transform (4 to the left above the current, 8 exactly above, and 4 to the right above)
   output wire [33*3*14-1:0] pixelsAboveForBp_p, // 33 pixels above for BP (A0 to A7 and B0 to B24)
   output wire [8*3*14-1:0] pixelsAboveForMpp_p, // 8 pixels above for MPP (for non-FBLS mean calculation)
@@ -164,8 +169,6 @@ reg [3:0] decoding_proc_rd_req_dl;
 always @ (posedge clk)
   decoding_proc_rd_req_dl <= {decoding_proc_rd_req_dl[2:0], decoding_proc_rd_req};
   
-assign decoding_proc_rd_valid = decoding_proc_rd_req_dl[3];
-
 wire ram_rd_en;
 assign ram_rd_en = decoding_proc_rd_req | decoding_proc_rd_req_dl[0];
 reg [ADDR_WIDTH-1:0] ram_rd_addr;
@@ -236,32 +239,118 @@ generate
   end
 endgenerate
 
-reg ram_data_valid_dl;
+reg [1:0] ram_data_valid_dl;
 always @ (posedge clk)
-  ram_data_valid_dl <= ram_data_valid;
+  ram_data_valid_dl <= {ram_data_valid_dl[0], ram_data_valid};
   
-reg signed [13:0] pixelsShiftReg [2:0][43:0];
+reg signed [13:0] pixelsShiftReg [2:0][39:0];
 always @ (posedge clk)
-  if (ram_data_valid_dl)
+  if (ram_data_valid_dl[0])
     for (c = 0; c < 3; c = c + 1) begin
       for (p = 0; p < 4; p = p + 1) 
         pixelsShiftReg[c][3-p] <= pixelForDecodingProc[c][p];
-      for (p = 4; p < 44; p = p + 1)
-          pixelsShiftReg[c][p] <= pixelsShiftReg[c][p - 4];    
+      for (p = 4; p < 40; p = p + 1)
+        pixelsShiftReg[c][p] <= pixelsShiftReg[c][p - 4];    
     end
+
+reg rd_active;
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    rd_active <= 1'b0;
+  else if (flush | sos)
+    rd_active <= 1'b0;
+  else if (decoding_proc_rd_req)
+    rd_active <= 1'b1;
+
+wire push;
+assign push = rd_active & decoding_proc_rd_req_dl[3];
+wire pull;
+assign pull = rd_active & ~block_push & parse_substreams;
+
+reg [1:0] wr_ptr;
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    wr_ptr <= 2'b0;
+  else if (flush | sos)
+    wr_ptr <= 2'b0;
+  else if (push)
+    wr_ptr <= wr_ptr + 1'b1;
+    
+reg wrap_wr;
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    wrap_wr <= 1'b0;
+  else if (flush | sos)
+    wrap_wr <= 1'b0;
+  else if (push & (wr_ptr == 2'd3))
+    wrap_wr <= ~wrap_wr;
+    
+reg [1:0] rd_ptr;
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    rd_ptr <= 2'b0;
+  else if (flush | sos)
+    rd_ptr <= 2'b0;
+  else if (pull)
+    rd_ptr <= rd_ptr + 1'b1;
+    
+reg wrap_rd;
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    wrap_rd <= 1'b0;
+  else if (flush | sos)
+    wrap_rd <= 1'b0;
+  else if (pull & (rd_ptr == 2'd3))
+    wrap_rd <= ~wrap_rd;
+
+assign decoding_proc_rd_valid = rd_active & ((decoding_proc_rd_req_dl[3] & ~push) | parse_substreams);
+
+parameter PIXELS_FIFO_SIZE = 48;
+
+reg [13:0] fifo [3:0][2:0][PIXELS_FIFO_SIZE-1:0];
+always @ (posedge clk)
+  if (push)
+    for (c = 0; c < 3; c = c + 1)
+      for (p = 0; p < PIXELS_FIFO_SIZE; p = p + 1)
+        fifo[wr_ptr][c][p] <= pixelsShiftReg[c][p];
+
+wire fifo_empty;
+assign fifo_empty = ~(wrap_rd ^ wrap_wr) & (rd_ptr == wr_ptr);
+
+assign stall_pull = fifo_empty & ~push & rd_active;
+
+reg fifo_underflow;
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    fifo_underflow <= 1'b0;
+  else if (flush)
+    fifo_underflow <= 1'b0;
+  else if (fifo_empty & pull & ~push)
+    fifo_underflow <= 1'b1;
+
+wire fifo_full;
+assign fifo_full = (wrap_rd ^ wrap_wr) & (rd_ptr == wr_ptr);
+reg signed [13:0] alt_pixelsShiftReg [2:0][PIXELS_FIFO_SIZE-1:0];
+always @ (*)
+  for (c = 0; c < 3; c = c + 1)
+    for (p = 0; p < PIXELS_FIFO_SIZE; p = p + 1)
+      if (fifo_empty)
+        alt_pixelsShiftReg[c][p] = pixelsShiftReg[c][p];
+      else
+        alt_pixelsShiftReg[c][p] = fifo[rd_ptr][c][p];
 
 genvar compi;
 genvar coli;
 generate
   for (compi = 0; compi < 3; compi = compi + 1) begin : gen_pixelsAbove_comp
     for (coli = 0; coli < 33; coli = coli + 1) begin : gen_pixelsAboveForBp_col
-      assign pixelsAboveForBp_p[(33*compi + coli)*14+:14] = pixelsShiftReg[compi][coli+7];
+      assign pixelsAboveForBp_p[(33*compi + coli)*14+:14] = alt_pixelsShiftReg[compi][coli+7];
     end
     for (coli = 0; coli < 16; coli = coli + 1) begin : gen_pixelsAboveForTransform_col
-      assign pixelsAboveForTrans_p[(16*compi + coli)*14+:14] = pixelsShiftReg[compi][31-coli];
+      assign pixelsAboveForTrans_p[(16*compi + coli)*14+:14] = alt_pixelsShiftReg[compi][31-coli];
     end
     for (coli = 0; coli < 8; coli = coli + 1) begin : gen_pixelsAboveForMpp_col
-      assign pixelsAboveForMpp_p[(8*compi + coli)*14+:14] = pixelsShiftReg[compi][/*23*/31-coli];
+      assign pixelsAboveForMpp_p[(8*compi + coli)*14+:14] = alt_pixelsShiftReg[compi][31-coli];
     end
   end
 endgenerate

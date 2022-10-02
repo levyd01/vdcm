@@ -1,4 +1,4 @@
-`timescale 1ns / 1ns
+`timescale 1ns / 1ps
 
 `default_nettype none
 
@@ -12,7 +12,10 @@ parameter MAX_SLICE_HEIGHT    = 2560;
 parameter MAX_BPC = 8;
 parameter MAX_NBR_SLICES = 2;
 
-real CLK_CORE_PERIOD = 10.0;
+real AVG_PIXEL_RATE = 1.2*(10**6); // pixels per second
+real SPEED_FACTOR = 1.2; // Factor mutiplying the minimum required rate of the internal DSC clock.
+
+real CLK_CORE_PERIOD = 100.0; // 16 pixels processed per slice per clock cycle
 reg clk_core = 1;
 always
   #(CLK_CORE_PERIOD/2) clk_core = ~clk_core;
@@ -29,8 +32,11 @@ initial begin
   file_test_cfg = $fopen("test_cfg.txt", "r");
   fc = $fscanf(file_test_cfg,"%d\t%s\n",chunks_per_line, comment);
   fc = $fscanf(file_test_cfg,"%f\t%s\n", bits_per_pixel, comment);
-  CLK_IN_INT_PERIOD = CLK_CORE_PERIOD * 256/bits_per_pixel/4/chunks_per_line;
-  CLK_OUT_INT_PERIOD = CLK_CORE_PERIOD/chunks_per_line/1.01;
+
+  CLK_CORE_PERIOD = (10**6) / (AVG_PIXEL_RATE / 16.0 / chunks_per_line * SPEED_FACTOR);
+  CLK_IN_INT_PERIOD = (10**6) / AVG_PIXEL_RATE * (16*256.0/bits_per_pixel);
+  CLK_OUT_INT_PERIOD = (10**6) / (AVG_PIXEL_RATE / 4.0 * SPEED_FACTOR);
+  
 end
 
 reg clk_in_int = 1;
@@ -52,6 +58,7 @@ reg flush = 1'b0;
 reg in_sof = 1'b0;
 reg in_valid = 1'b0;
 reg [255:0] in_data = 256'hx;
+reg in_data_is_pps = 1'b0;
 reg [128*8-1:0] pps;
 integer w;
 reg [255:0] tmp_data;
@@ -90,12 +97,15 @@ initial begin
   for (w=0; w<4; w=w+1) begin
     in_valid = 1'b1;
     in_data = pps[w*256+:256];
+    in_data_is_pps = 1'b1;
     @(negedge clk_in_int);
     in_valid = 1'b0;
+    in_data_is_pps = 1'b0;
     in_data = 256'hx;
   end
   in_sof = 1'b1;
   in_valid = 1'b0;
+  in_data_is_pps = 1'b0;
   in_data = 256'hx;
   while (!pps_done) begin
     @(negedge clk_in_int);
@@ -158,6 +168,7 @@ uut
   .in_data              (in_data),
   .in_valid             (in_valid),
   .in_sof               (in_sof),  // Start of frame
+  .in_data_is_pps       (in_data_is_pps), // in_data contains PPS before in_sof
   
   .pixs_out             (pixs_out),
   .pixs_out_eof         (pixs_out_eof),
@@ -332,7 +343,7 @@ generate
     integer bufferFullness_g;
     always @ (negedge clk_core)
       if (gs < chunks_per_line)
-        if (uut.gen_slice_decoder[gs].slice_decoder_u.dec_rate_control_u.blockBits_valid)
+        if (uut.gen_slice_decoder[gs].slice_decoder_u.block_position_u.substreams123_parsed)
           if (!$feof(file_bufferFullness[gs])) begin
             fd = $fscanf(file_bufferFullness[gs],"%d\n",bufferFullness_g);
             s_idx_str.itoa(gs);
@@ -346,7 +357,7 @@ generate
     integer rcFullness_g;
     always @ (negedge clk_core)
       if (gs < chunks_per_line)
-        if (uut.gen_slice_decoder[gs].slice_decoder_u.dec_rate_control_u.blockBits_valid_dl[0])
+        if (uut.gen_slice_decoder[gs].slice_decoder_u.block_position_u.substreams123_parsed)
           if (!$feof(file_rcFullness[gs])) begin
             fd = $fscanf(file_rcFullness[gs],"%d\n",rcFullness_g);
             slice_cnt_str.itoa(slice_cnt[gs]-1);
@@ -361,11 +372,12 @@ generate
     integer targetRate_g;
     always @ (negedge clk_core) 
       if (gs < chunks_per_line)
-        if (uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.blockBits_valid)
+        if (uut.gen_slice_decoder[gs].slice_decoder_u.block_position_u.substreams123_parsed)
           if (!$feof(file_targetRate[gs])) begin
             fd = $fscanf(file_targetRate[gs],"%d\n",targetRate_g);
             s_idx_str.itoa(gs);
-            Assert(targetRate_g, uut.gen_slice_decoder[gs].slice_decoder_u.dec_rate_control_u.targetRate, {"Slice ", slice_cnt_str, ", ", s_idx_str, ": Wrong targetRate"});
+            if (~uut.gen_slice_decoder[gs].slice_decoder_u.block_position_u.isFirstBlock) // We do not care about the first block targetRate because it is not used in this block
+              Assert(targetRate_g, uut.gen_slice_decoder[gs].slice_decoder_u.dec_rate_control_u.targetRate, {"Slice ", slice_cnt_str, ", ", s_idx_str, ": Wrong targetRate"});
           end
         else
           $fclose(file_targetRate[gs]);

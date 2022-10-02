@@ -15,6 +15,8 @@ module slice_mux
   input wire [$clog2(MAX_SLICE_HEIGHT)-1:0] slice_height,
   input wire [15:0] frame_height,
   
+  output wire [MAX_NBR_SLICES-1:0] fifo_almost_full,
+  
   input wire [MAX_NBR_SLICES*4*3*14-1:0] pixs_in_p,
   input wire [MAX_NBR_SLICES-1:0] pixs_in_sof,
   input wire [MAX_NBR_SLICES-1:0] pixs_in_valid,
@@ -64,7 +66,7 @@ always @ (posedge clk_out_int or negedge rst_n)
     line_cnt_rd <= {$clog2(MAX_SLICE_HEIGHT){1'b0}};
   else if (mem_rd_sof[0])
     line_cnt_rd <= {$clog2(MAX_SLICE_HEIGHT){1'b0}};
-  else if (rd_eoc[slices_per_line-1])
+  else if (rd_eoc[slices_per_line-1] & mem_rd_en[slices_per_line-1])
     if (line_cnt_rd == slice_height - 1'b1) 
       line_cnt_rd <= {$clog2(MAX_SLICE_HEIGHT){1'b0}};
     else
@@ -76,7 +78,7 @@ always @ (posedge clk_out_int or negedge rst_n)
     line_cnt_until_eof <= 16'b0;
   else if (mem_rd_sof[0])
     line_cnt_until_eof <= 16'b0;
-  else if (rd_eoc[slices_per_line-1])
+  else if (rd_eoc[slices_per_line-1] & mem_rd_en[slices_per_line-1])
     line_cnt_until_eof <= line_cnt_until_eof + 1'b1;
     
 
@@ -85,13 +87,12 @@ always @ (posedge clk_out_int or negedge rst_n)
     eof_rd <= 1'b0;
   else if (mem_rd_sof[0])
     eof_rd <= 1'b0;
-  else if (rd_eoc[slices_per_line-1] & (line_cnt_until_eof >= frame_height - 1'b1))
+  else if (rd_eoc[slices_per_line-1] & (line_cnt_until_eof >= frame_height - 1'b1) & mem_rd_en[slices_per_line-1])
     eof_rd <= 1'b1;
 
 wire [MAX_NBR_SLICES-1:0] wr_eoc;
 
-parameter NBR_LINES_IN_RAM = (MAX_SLICE_WIDTH>>2)+4;
-parameter ADDR_WIDTH = $clog2(NBR_LINES_IN_RAM);
+parameter ADDR_WIDTH = $clog2(((MAX_SLICE_WIDTH>>2))+4);
 
 integer m;
 genvar gn;
@@ -123,29 +124,29 @@ generate
         rd_pix4_cnt[gs] <= {ADDR_WIDTH{1'b0}};
       else if (mem_rd_sof[gs])
         rd_pix4_cnt[gs] <= {ADDR_WIDTH{1'b0}};
-      else if (mem_rd_en[gs] & ~mem_empty[gs])
+      else if (mem_rd_en[gs])
         if (rd_pix4_cnt[gs] == (slice_width>>2) - 1'b1)
           rd_pix4_cnt[gs] <= {ADDR_WIDTH{1'b0}};
         else
           rd_pix4_cnt[gs] <= rd_pix4_cnt[gs] + 1'b1;
     
-    //assign rd_eoc[gs] = (rd_pix4_cnt[gs] == (slice_width>>2) - 1'b1) & mem_rd_en[gs];
     always @ (posedge clk_out_int or negedge rst_n)
       if (~rst_n)
         rd_eoc[gs] <= 1'b0;
       else if (mem_rd_sof[gs])
         rd_eoc[gs] <= 1'b0;
-      else if (mem_rd_en[gs] & ~mem_empty[gs] & (rd_pix4_cnt[gs] == (slice_width>>2) - 1'b1))
-        rd_eoc[gs] <= 1'b1;
-      else 
-        rd_eoc[gs] <= 1'b0;
+      else if (mem_rd_en[gs])
+        if (rd_pix4_cnt[gs] == (slice_width>>2) - 2'd2)
+          rd_eoc[gs] <= 1'b1;
+        else 
+          rd_eoc[gs] <= 1'b0;
     
     
-    assign mem_rd_en[gs] = (mem_rd_sel == gs);
+    assign mem_rd_en[gs] = (mem_rd_sel == gs) & ~mem_empty[gs];
     
     out_sync_buf 
       #(
-        .NUMBER_OF_LINES          (NBR_LINES_IN_RAM),
+        .NUMBER_OF_LINES          (MAX_SLICE_WIDTH>>1),
         .DATA_WIDTH               (4*3*14)
       )
       output_sync_buf_u
@@ -157,8 +158,8 @@ generate
         .in_data                      (mem_wr_data[gs]),
         .in_sof                       (pixs_in_sof[gs]),
         .in_valid                     (pixs_in_valid[gs]),
-        .in_eoc                       (wr_eoc[gs]),
         .empty                        (mem_empty[gs]),
+        .fifo_almost_full             (fifo_almost_full[gs]),
         .out_rd_en                    (mem_rd_en[gs]),
         .out_data                     (mem_rd_data[gs]),
         .out_sof                      (mem_rd_sof[gs]),
@@ -175,9 +176,18 @@ always @ (posedge clk_out_int or negedge rst_n) begin
 end
 
 always @ (posedge clk_out_int) begin
-  pixs_out <= mem_rd_data[mem_rd_sel_dl[1]];
-  pixs_out_valid <= mem_rd_valid[mem_rd_sel_dl[1]];
+  pixs_out <= mem_rd_data[mem_rd_sel_dl[0]];
+  pixs_out_valid <= mem_rd_valid[mem_rd_sel_dl[0]];
   pixs_out_eof <= eof_rd;
 end
+
+wire [13:0] pixs_out_unpacked [2:0][3:0];
+generate
+  for (gp = 0; gp < 4; gp = gp + 1) begin : gen_pixs_out_unpacked_p
+    for (gc = 0; gc < 3; gc = gc + 1) begin : gen_pixs_out_unpacked_c
+      assign pixs_out_unpacked[gc][gp] = pixs_out[(gp*3+gc)*14+:14];
+    end
+  end
+endgenerate
 
 endmodule

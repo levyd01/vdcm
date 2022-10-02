@@ -52,48 +52,6 @@ generate
     end
 endgenerate
 
-/*
-reg signed [13:0] temp;
-reg signed [13:0] R, G, B;
-reg [11:0] dst_r [1:0][7:0];
-reg [11:0] dst_g [1:0][7:0];
-reg [11:0] dst_b [1:0][7:0];
-always @ (*)
-  for (ri=0; ri<2; ri=ri+1)
-    for (ci=0; ci<8; ci=ci+1) begin
-      temp = src_y[ri][ci] - (src_cg[ri][ci] >>> 1);
-      G = src_cg[ri][ci] + temp;
-      B = temp - (src_co[ri][ci] >>> 1);
-      R = B + src_co[ri][ci];
-      case (maxPoint)
-        12'd255:
-          begin
-            if (G[13]) dst_g[ri][ci] = 12'd0; else if (|G[12:8]) dst_g[ri][ci] = 12'd255; else dst_g[ri][ci] = G[11:0];
-            if (B[13]) dst_b[ri][ci] = 12'd0; else if (|B[12:8]) dst_b[ri][ci] = 12'd255; else dst_b[ri][ci] = B[11:0];
-            if (R[13]) dst_r[ri][ci] = 12'd0; else if (|R[12:8]) dst_r[ri][ci] = 12'd255; else dst_r[ri][ci] = R[11:0];
-          end
-        12'd1023:
-          begin
-            if (G[13]) dst_g[ri][ci] = 12'd0; else if (|G[12:10]) dst_g[ri][ci] = 12'd1023; else dst_g[ri][ci] = G[11:0];
-            if (B[13]) dst_b[ri][ci] = 12'd0; else if (|B[12:10]) dst_b[ri][ci] = 12'd1023; else dst_b[ri][ci] = B[11:0];
-            if (R[13]) dst_r[ri][ci] = 12'd0; else if (|R[12:10]) dst_r[ri][ci] = 12'd1023; else dst_r[ri][ci] = R[11:0];
-          end
-        12'd1023:
-          begin
-            if (G[13]) dst_g[ri][ci] = 12'd0; else if (G[12]) dst_g[ri][ci] = 12'd4095; else dst_g[ri][ci] = G[11:0];
-            if (B[13]) dst_b[ri][ci] = 12'd0; else if (B[12]) dst_b[ri][ci] = 12'd4095; else dst_b[ri][ci] = B[11:0];
-            if (R[13]) dst_r[ri][ci] = 12'd0; else if (R[12]) dst_r[ri][ci] = 12'd4095; else dst_r[ri][ci] = R[11:0];
-          end
-        default:
-          begin
-            if (G[13]) dst_g[ri][ci] = 12'd0; else if (|G[12:8]) dst_g[ri][ci] = 12'd255; else dst_g[ri][ci] = G[11:0];
-            if (B[13]) dst_b[ri][ci] = 12'd0; else if (|B[12:8]) dst_b[ri][ci] = 12'd255; else dst_b[ri][ci] = B[11:0];
-            if (R[13]) dst_r[ri][ci] = 12'd0; else if (|R[12:8]) dst_r[ri][ci] = 12'd255; else dst_r[ri][ci] = R[11:0];
-          end
-      endcase
-    end
-*/
-
 wire [11:0] dst_r [1:0][7:0];
 wire [11:0] dst_g [1:0][7:0];
 wire [11:0] dst_b [1:0][7:0];
@@ -114,9 +72,6 @@ generate
     end
   end
 endgenerate
-
-
-
 
 integer cp, ci, ri;
 

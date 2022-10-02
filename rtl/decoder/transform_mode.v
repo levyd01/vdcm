@@ -151,7 +151,7 @@ generate
     for (si=0; si<16; si=si+1)
       assign pQuant[ci][si] = pQuant_p[ci*16*16+si*16+:16];
     assign qp[ci] = qp_p[ci*7+:7];
-    for (coli = 0; coli < 16; coli = coli + 1) begin : gen_reconBlk_wr_data_col
+    for (coli = 0; coli < 16; coli = coli + 1) begin : gen_neighborsAbove_from_ram_col
       assign neighborsAbove_from_ram[ci][coli] = neighborsAbove_rd_p[(16*ci + coli)*14+:14];
     end
   end
@@ -159,18 +159,23 @@ endgenerate
 
 reg pResidual_valid;
 reg [2:0] bestIntraPredIdx_dl;
-reg eoc_dl;
 reg soc_dl;
 always @ (posedge clk or negedge ~rst_n)
   if (~rst_n) begin
     bestIntraPredIdx_dl <= 3'd0;
-    eoc_dl <= 1'b0;
     soc_dl <= 1'b0;
   end
   else if (pResidual_valid) begin
     bestIntraPredIdx_dl <= bestIntraPredIdx;
-    eoc_dl <= eoc;
     soc_dl <= soc;
+  end
+reg eoc_dl;
+always @ (posedge clk or negedge ~rst_n)
+  if (~rst_n) begin
+    eoc_dl <= 1'b0;
+  end
+  else begin
+    eoc_dl <= eoc;
   end
 
 reg [2:0] resetLeft_dl;
@@ -208,8 +213,8 @@ integer j;
 reg signed [13:0] pReconBlk [2:0][1:0][7:0];
 reg signed [13:0] neighborsLeft [2:0][1:0][neighborsLeftLen-1:0];
 always @ (posedge clk)
-  if (pReconBlk_valid & ~fbls_dl[1]) begin
-    if (resetLeft_dl[0])
+  if (pReconBlk_valid & ~fbls_dl[0]) begin
+    if (resetLeft)
       for (c=0; c<3; c=c+1)
         for (j = 0; j < blkHeight[c]; j = j + 1)
           for (i = 0; i < neighborsLeftLen ; i = i + 1)
@@ -224,72 +229,28 @@ always @ (posedge clk)
 // Initialize neighbors (above samples) for spatial prediction
 reg signed [13:0] neighborsAbove [2:0][15:0];
 wire resetAbove;
-assign resetAbove = fbls_dl[1];
+assign resetAbove = fbls_dl[0];
 parameter neighborsAboveLen = 8;
 integer col;
 integer row;
 always @ (posedge clk)
   for (c=0; c<3; c=c+1)
     if (pResidual_valid & resetAbove)
-        for (col = 0; col < neighborsAboveLenAdjusted[c]; col = col + 1)
-          neighborsAbove[c][col] <= {1'b0, midPoint};
+      for (col = 0; col < neighborsAboveLenAdjusted[c]; col = col + 1)
+        neighborsAbove[c][col] <= {1'b0, midPoint};
     else if (neighborsAbove_valid)
-        for (col = 0; col < neighborsAboveLenAdjusted[c]; col = col + 1)
-          neighborsAbove[c][col] <= neighborsAbove_from_ram[c][col];
-  
-        
-// Initialize neighbors (left-above samples) for spatial prediction
-parameter neighborsLeftAboveLen = 4;
-reg signed [13:0] neighborsLeftAbove [3:0][2:0];
-always @ (posedge clk)
-  if (pQuant_valid) begin
-    for (c=0; c<3; c=c+1)
-      if (resetAbove | resetLeft)
-        for (i = 0; i < neighborsLeftAboveLen; i = i + 1)
-          neighborsLeftAbove[i][c] <= {1'b0, midPoint};
-      // else TBD
-  end
-          
-// Convert from RGB to YCoCg
-reg [13:0] Co;
-reg [13:0] Cg;
-reg [13:0] tmp;
-reg [13:0] neighborsAbove_YCoCg_d [2:0][neighborsAboveLen-1:0];
-reg [13:0] neighborsLeftAbove_YCoCg_d [2:0][neighborsLeftAboveLen-1:0];
-always @ (*) begin
-  // Above
-  for (row = 0; row < 2; row = row + 1)
-    for (col = 0; col < neighborsAboveLen; col = col + 1) begin
-      Co = neighborsAbove[0][col] - neighborsAbove[2][row][col];
-      tmp = neighborsAbove[2][col] + (Co >> 1);
-      Cg = neighborsAbove[1][col] - tmp;
-      neighborsAbove_YCoCg_d[0][col] = tmp + (Cg >> 1); // Y
-      neighborsAbove_YCoCg_d[1][col] = Co;              // Co
-      neighborsAbove_YCoCg_d[2][col] = Cg;              // Cg
-    end
-  // Left-above
-  for (row = 0; row < 2; row = row + 1)
-    for (col = 0; col < neighborsLeftAboveLen; col = col + 1) begin
-      Co = neighborsLeftAbove[0][col] - neighborsLeftAbove[2][row][col];
-      tmp = neighborsLeftAbove[2][col] + (Co >> 1);
-      Cg = neighborsLeftAbove[1][col] - tmp;
-      neighborsLeftAbove_YCoCg_d[0][col] = tmp + (Cg >> 1); // Y
-      neighborsLeftAbove_YCoCg_d[1][col] = Co;              // Co
-      neighborsLeftAbove_YCoCg_d[2][col] = Cg;              // Cg
-    end
-end
-reg [12:0] neighborsAbove_YCoCg [2:0][neighborsAboveLen-1:0];
-reg [12:0] neighborsLeftAbove_YCoCg [2:0][neighborsLeftAboveLen-1:0];
-reg pDequant_valid;
-always @ (posedge clk)
-  if (pDequant_valid)
-    for (c=0; c<3; c=c+1)
-      for (row = 0; row < 2; row = row + 1)
-        for (col = 0; col < neighborsAboveLen; col = col + 1) begin
-          neighborsAbove_YCoCg[c][col] <= neighborsAbove_YCoCg_d[c][col];
-          neighborsLeftAbove_YCoCg[c][col] <= neighborsLeftAbove_YCoCg_d[c][col];
-        end
+      for (col = 0; col < neighborsAboveLenAdjusted[c]; col = col + 1)
+        neighborsAbove[c][col] <= neighborsAbove_from_ram[c][col];
 
+reg signed [13:0] neighborsAbove_from_ram_i [2:0][15:0];
+always @ (*)
+  for (c=0; c<3; c=c+1)
+    for (col = 0; col < neighborsAboveLenAdjusted[c]; col = col + 1)
+      if (neighborsAbove_valid)
+        neighborsAbove_from_ram_i[c][col] = neighborsAbove_from_ram[c][col];
+      else
+        neighborsAbove_from_ram_i[c][col] = neighborsAbove[c][col];
+        
 // Perform Intra Prediction (PerfPrediction (IntraPredictorType predictor) in C model)
 // ------------------------ 
     
@@ -307,23 +268,22 @@ always @ (*)
 
 
 // IntraDC: A0 + A1 + A2 + A3 + A4 + A5 + A6 + A7 for 4:4:4, A0 + A1 + A2 + A3 for 4:2:2 and 4:2:0
-wire [3:0] sel_neighborsAbove_from_ram;
+wire [1:0] sel_neighborsAbove_from_ram;
 assign sel_neighborsAbove_from_ram = 
-          {neighborsAbove_valid_dl[0], neighborsAbove_valid, neighborsAbove_valid_dl[2], neighborsAbove_valid_dl[1]}; // start to sum during previous block
+          {neighborsAbove_valid_dl[0], neighborsAbove_valid};
+          
 reg signed [22:0] sum_r [2:0];
 always @ (posedge clk) 
   for (c=0; c<3; c=c+1)
-    case (sel_neighborsAbove_from_ram) // start to sum during previous block
-      4'b0001: sum_r[c] <= neighborsAbove_from_ram[c][8] + neighborsAbove_from_ram[c][9];
-      4'b0010: sum_r[c] <= sum_r[c] + neighborsAbove_from_ram[c][6] + neighborsAbove_from_ram[c][7];
-      4'b0100: if (blkWidth[c] == 8) sum_r[c] <= sum_r[c] + neighborsAbove_from_ram[c][4] + neighborsAbove_from_ram[c][5];
-      4'b1000: if (blkWidth[c] == 8) sum_r[c] <= sum_r[c] + neighborsAbove_from_ram[c][6] + neighborsAbove_from_ram[c][7];
+    case (sel_neighborsAbove_from_ram)
+      2'b01: sum_r[c] <= neighborsAbove_from_ram_i[c][0] + neighborsAbove_from_ram_i[c][1] + neighborsAbove_from_ram_i[c][4] + neighborsAbove_from_ram_i[c][5];
+      2'b10: sum_r[c] <= sum_r[c] + neighborsAbove_from_ram_i[c][2] + neighborsAbove_from_ram_i[c][3] + neighborsAbove_from_ram_i[c][6] + neighborsAbove_from_ram_i[c][7];
     endcase
           
 reg signed [14:0] mean [2:0];
-always @ (*) 
+always @ (*)
   for (c=0; c<3; c=c+1)
-    mean[c] = (blkWidth[c] == 4'd8) ? sum_r[c] >>> 3 : sum_r[c] >>> 2;
+    mean[c] <= (blkWidth[c] == 4'd8) ? sum_r[c] >>> 3 : sum_r[c] >>> 2;
 
 // Table 4-42        
 localparam INTRA_DC = 0;
@@ -360,160 +320,150 @@ function signed [13:0] Filter3;
   end
 endfunction
 
-
+reg pDequant_valid;
 reg signed [13:0] predBlk [2:0][1:0][7:0];
 always @ (posedge clk) 
   for (c=0; c<3; c=c+1) begin
     if (pDequant_valid)
-        if (resetAbove)
-          for (row = 0; row < blkHeight[c]; row = row + 1)
-            for (col = 0; col < blkWidth[c]; col = col + 1)
-              predBlk[c][row][col] <= predBlkFbls_d[c][row][col];
-        else
-          case (bestIntraPredIdx_dl)
-            INTRA_DC:
-              begin
-                for (row = 0; row < blkHeight[c]; row = row + 1)
-                  for (col = 0; col < blkWidth[c]; col = col + 1)
-                    predBlk[c][row][col] <= mean[c];
-              end
-            INTRA_V:
-              if (eoc_dl)
-                for (row = 0; row < blkHeight[c]; row = row + 1)
-                  for (col = 0; col < 8; col = col + 1) begin
-                    predBlk[c][row][col] <= neighborsAbove_from_ram[c][col];
+      if (resetAbove)
+        for (row = 0; row < blkHeight[c]; row = row + 1)
+          for (col = 0; col < blkWidth[c]; col = col + 1)
+            predBlk[c][row][col] <= predBlkFbls_d[c][row][col];
+      else
+        case (bestIntraPredIdx_dl)
+          INTRA_DC:
+            begin
+              for (row = 0; row < blkHeight[c]; row = row + 1)
+                for (col = 0; col < blkWidth[c]; col = col + 1)
+                  predBlk[c][row][col] <= mean[c];
+            end
+          INTRA_V:
+            for (row = 0; row < blkHeight[c]; row = row + 1)
+              for (col = 0; col < blkWidth[c]; col = col + 1)
+                predBlk[c][row][col] <= neighborsAboveForIntra[c][4+col];
+          INTRA_DR:
+            case (chroma_format)
+              2'd0: // 4:4:4
+                for (col = 0; col < 8; col = col + 1) begin
+                  if (soc_dl) begin
+                    // TBD
                   end
-              else
-                for (row = 0; row < blkHeight[c]; row = row + 1)
-                  for (col = 0; col < blkWidth[c]; col = col + 1)
-                    predBlk[c][row][col] <= neighborsAboveForIntra[c][4+col];
-            INTRA_DR:
-              case (chroma_format)
-                2'd0: // 4:4:4
-                  for (col = 0; col < 8; col = col + 1) begin
-                    if (eoc_dl) begin
-                      // TBD
-                    end
-                    else begin
-                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
-                    end
+                  else begin
+                    predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                    predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
                   end
-                // 2'd1: // 4:2:2 TBD 
-                // 2'd2: // 4:2:0 TBD
-              endcase
-            INTRA_DL:
-              case (chroma_format)
-                2'd0: // 4:4:4
-                  for (col = 0; col < 8; col = col + 1) begin
-                    if (eoc_dl) begin
-                      if (col < 5) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAbove_from_ram[c][col], neighborsAbove_from_ram[c][col+1], neighborsAbove_from_ram[c][col+2]);
-                        predBlk[c][1][col] <= Filter3(neighborsAbove_from_ram[c][col+1], neighborsAbove_from_ram[c][col+2], neighborsAbove_from_ram[c][col+3]);
-                      end
-                      else if (col == 5) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAbove_from_ram[c][col], neighborsAbove_from_ram[c][col+1], neighborsAbove_from_ram[c][col+2]);
-                        predBlk[c][1][col] <= Filter3(neighborsAbove_from_ram[c][col+1], neighborsAbove_from_ram[c][col+2], neighborsAbove_from_ram[c][col+2]);
-                      end
-                      else if (col == 6) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAbove_from_ram[c][col], neighborsAbove_from_ram[c][col+1], neighborsAbove_from_ram[c][col+1]);
-                        predBlk[c][1][col] <= neighborsAbove_from_ram[c][col+1];
-                      end
-                      else begin // col == 7
-                        predBlk[c][0][col] <= neighborsAbove_from_ram[c][col];
-                        predBlk[c][1][col] <= neighborsAbove_from_ram[c][col];
-                      end
-                    end
-                    else begin
+                end
+              // 2'd1: // 4:2:2 TBD 
+              // 2'd2: // 4:2:0 TBD
+            endcase
+          INTRA_DL:
+            case (chroma_format)
+              2'd0: // 4:4:4
+                for (col = 0; col < 8; col = col + 1) begin
+                  if (eoc_dl) begin // Pixel duplication at chunk boundary
+                    if (col < 5) begin
                       predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
                       predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
                     end
-                  end
-                // 2'd1: // 4:2:2 TBD 
-                // 2'd2: // 4:2:0 TBD
-              endcase
-            INTRA_VL:
-              case (chroma_format)
-                2'd0: // 4:4:4
-                  for (col = 0; col < 8; col = col + 1) begin
-                    if (eoc_dl) begin
-                      if (col < 6) begin  
-                        //$display("neighborsAbove[%0d][%0d] = %d", c, col, neighborsAbove_from_ram[c][col]);
-                        //$display("neighborsAbove[%0d][%0d] = %d", c, col+1, neighborsAbove_from_ram[c][col+1]);
-                        predBlk[c][0][col] <= (neighborsAbove_from_ram[c][col] + neighborsAbove_from_ram[c][col+1] + $signed(2'b01)) >>> 1;
-                        predBlk[c][1][col] <= Filter3(neighborsAbove_from_ram[c][col], neighborsAbove_from_ram[c][col+1], neighborsAbove_from_ram[c][col+2]);
-                      end
-                      else if (col == 6) begin
-                        predBlk[c][0][col] <= (neighborsAbove_from_ram[c][col] + neighborsAbove_from_ram[c][col+1] + $signed(2'b01)) >>> 1;
-                        predBlk[c][1][col] <= Filter3(neighborsAbove_from_ram[c][col], neighborsAbove_from_ram[c][col+1], neighborsAbove_from_ram[c][col+1]);
-                      end
-                      else if (col == 7) begin
-                        predBlk[c][0][col] <= ((neighborsAbove_from_ram[c][col] <<< 1) + $signed(2'b01)) >>> 1;
-                        predBlk[c][1][col] <= Filter3(neighborsAbove_from_ram[c][col], neighborsAbove_from_ram[c][col], neighborsAbove_from_ram[c][col]);
-                      end          
+                    else if (col == 5) begin
+                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
                     end
-                    else begin
+                    else if (col == 6) begin
+                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
+                      predBlk[c][1][col] <= neighborsAboveForIntra[c][4+col+1];
+                    end
+                    else begin // col == 7
+                      predBlk[c][0][col] <= neighborsAboveForIntra[c][4+col];
+                      predBlk[c][1][col] <= neighborsAboveForIntra[c][4+col];
+                    end
+                  end
+                  else begin
+                    predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                    predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                  end
+                end
+              // 2'd1: // 4:2:2 TBD 
+              // 2'd2: // 4:2:0 TBD
+            endcase
+          INTRA_VL:
+            case (chroma_format)
+              2'd0: // 4:4:4
+                for (col = 0; col < 8; col = col + 1) begin
+                  if (eoc_dl) begin // Pixel duplication at chunk boundary
+                    if (col < 6) begin  
+                       predBlk[c][0][col] <= (neighborsAboveForIntra[c][4+col] + neighborsAboveForIntra[c][4+col+1] + $signed(2'b01)) >>> 1;
+                       predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                    end
+                    else if (col == 6) begin
                       predBlk[c][0][col] <= (neighborsAboveForIntra[c][4+col] + neighborsAboveForIntra[c][4+col+1] + $signed(2'b01)) >>> 1;
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
                     end
+                    else if (col == 7) begin
+                      predBlk[c][0][col] <= ((neighborsAboveForIntra[c][4+col] <<< 1) + $signed(2'b01)) >>> 1;
+                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
+                    end         
                   end
-                // 2'd1: // 4:2:2 TBD 
-                // 2'd2: // 4:2:0 TBD
-              endcase      
-            INTRA_VR:
-              case (chroma_format)
-                2'd0: // 4:4:4
-                  for (col = 0; col < 8; col = col + 1) begin
-                    if (eoc_dl) begin
-                      // TBD
+
+                  else begin
+                    predBlk[c][0][col] <= (neighborsAboveForIntra[c][4+col] + neighborsAboveForIntra[c][4+col+1] + $signed(2'b01)) >>> 1;
+                    predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                  end
+                end
+              // 2'd1: // 4:2:2 TBD 
+              // 2'd2: // 4:2:0 TBD
+            endcase      
+          INTRA_VR:
+            case (chroma_format)
+              2'd0: // 4:4:4
+                for (col = 0; col < 8; col = col + 1) begin
+                  if (soc_dl)
+                    if (col == 0) begin
+                      predBlk[c][0][col] <= ($signed({1'b0, meanValue[c]}) + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
+                      predBlk[c][1][col] <= Filter3($signed({1'b0, meanValue[c]}), $signed({1'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
                     end
-                    else if (soc_dl)
-                      if (col == 0) begin
-                        predBlk[c][0][col] <= ($signed({1'b0, meanValue[c]}) + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
-                        predBlk[c][1][col] <= Filter3($signed({1'b0, meanValue[c]}), $signed({1'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
-                      end
-                      else if (col == 1) begin
-                        predBlk[c][0][col] <= (neighborsAboveForIntra[c][4+col-1] + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
-                        predBlk[c][1][col] <= Filter3($signed({1'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                      end
-                      else begin
-                        predBlk[c][0][col] <= (neighborsAboveForIntra[c][4+col-1] + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                      end
+                    else if (col == 1) begin
+                      predBlk[c][0][col] <= (neighborsAboveForIntra[c][4+col-1] + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
+                      predBlk[c][1][col] <= Filter3($signed({1'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                    end
                     else begin
                       predBlk[c][0][col] <= (neighborsAboveForIntra[c][4+col-1] + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
                       predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
                     end
+                  else begin
+                    predBlk[c][0][col] <= (neighborsAboveForIntra[c][4+col-1] + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
+                    predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
                   end
-                // 2'd1: // 4:2:2 TBD 
-                // 2'd2: // 4:2:0 TBD
-              endcase  
-            INTRA_HR:
-              case (chroma_format)
-                2'd0: // 4:4:4
-				          for (col = 0; col < 8; col = col + 1) begin
-                    if (eoc_dl) begin
-                      // TBD
-                    end
-                    else begin
-                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-4], neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
-                    end
+                end
+              // 2'd1: // 4:2:2 TBD 
+              // 2'd2: // 4:2:0 TBD
+            endcase  
+          INTRA_HR:
+            case (chroma_format)
+              2'd0: // 4:4:4
+		        for (col = 0; col < 8; col = col + 1) begin
+                  if (soc_dl) begin
+                    // TBD
                   end
-                // 2'd1: // 4:2:2 TBD 
-                // 2'd2: // 4:2:0 TBD
-              endcase
-            INTRA_HL:
-              case (chroma_format)
-                2'd0: // 4:4:4
-                  for (col = 0; col < 8; col = col + 1) begin
-                    predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
-                    predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+4]);
+                  else begin
+                    predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
+                    predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-4], neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
                   end
-                // 2'd1: // 4:2:2 TBD 
-                // 2'd2: // 4:2:0 TBD
-              endcase
-          endcase
+                end
+              // 2'd1: // 4:2:2 TBD 
+              // 2'd2: // 4:2:0 TBD
+            endcase
+          INTRA_HL:
+            case (chroma_format)
+              2'd0: // 4:4:4
+                for (col = 0; col < 8; col = col + 1) begin
+                  predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                  predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+4]);
+                end
+              // 2'd1: // 4:2:2 TBD 
+              // 2'd2: // 4:2:0 TBD
+            endcase
+        endcase
   end         
          
 // Reconstruct
@@ -741,9 +691,9 @@ always @ (*)
 reg signed [16:0] pResidual [2:0][15:0]; // predicted residuals, width TBD  
 always @ (posedge clk)
   if (pDequant_valid)
-  for (c=0; c<3; c=c+1)
-    for (s=0; s<blkHeight[c]*blkWidth[c]; s=s+1)
-      pResidual[c][s] <= pResidual_d[c][s];
+    for (c=0; c<3; c=c+1)
+      for (s=0; s<blkHeight[c]*blkWidth[c]; s=s+1)
+        pResidual[c][s] <= pResidual_d[c][s];
 always @ (posedge clk)
   pResidual_valid <= pDequant_valid;
 

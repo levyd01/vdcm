@@ -9,15 +9,17 @@ module in_sync_buf
   input wire clk_wr,
   input wire rst_n,
   
+  input wire flush,
+  
   input wire [DATA_WIDTH-1:0] in_data,
   input wire in_valid,
   input wire in_sof,
-  
-  input wire out_rd_en,
+  input wire in_data_is_pps,
   
   output reg [DATA_WIDTH-1:0] out_data,
   output reg out_valid,
-  output reg out_sof
+  output reg out_sof,
+  output reg out_data_is_pps
 );
 
 parameter ADDR_WIDTH = $clog2(NUMBER_OF_LINES) + 1; // Additional bit to differentiate between empty and full
@@ -36,8 +38,10 @@ reg [ADDR_WIDTH-1:0] addr_w;
 always @ (posedge clk_wr or negedge rst_n)
   if (~rst_n)
     addr_w <= {ADDR_WIDTH{1'b0}};
+  else if (flush)
+    addr_w <= {ADDR_WIDTH{1'b0}};
   else if (in_valid)
-    if (in_sof | (addr_w + 1'b1 == NUMBER_OF_LINES<<1))
+    if (addr_w + 1'b1 == NUMBER_OF_LINES<<1)
       addr_w <= {ADDR_WIDTH{1'b0}};
     else
       addr_w <= addr_w + 1'b1;
@@ -73,29 +77,28 @@ wire empty;
 assign empty = (addr_w_rd_clk_domain == addr_r);
 
 wire rd_en;
-assign rd_en = ~empty & out_rd_en;
+assign rd_en = ~empty;
 
 wire in_sof_core_clk;
 synchronizer sync_in_sof_u (.clk(clk_rd), .in(in_sof & in_valid), .out(in_sof_core_clk));
   
 always @ (posedge clk_rd or negedge rst_n)
   if (~rst_n)
-    addr_r <= {$clog2(NUMBER_OF_LINES){1'b0}};
-  else if (in_sof_core_clk)
-    addr_r <= addr_w_rd_clk_domain;
+    addr_r <= {ADDR_WIDTH{1'b0}};
+  else if (flush)
+    addr_r <= {ADDR_WIDTH{1'b0}};
   else if (rd_en)
     if (addr_r + 1'b1 == NUMBER_OF_LINES<<1)
-      addr_r <= {$clog2(NUMBER_OF_LINES){1'b0}};
+      addr_r <= {ADDR_WIDTH{1'b0}};
     else
       addr_r <= addr_r + 1'b1;
-   
-
-wire [DATA_WIDTH+1-1:0] rd_data;
+	     
+wire [DATA_WIDTH+2-1:0] rd_data;
 wire mem_valid;
 sync_dp_ram 
 #(
   .NUMBER_OF_LINES  (NUMBER_OF_LINES),
-  .DATA_WIDTH       (DATA_WIDTH + 1) // data + sof
+  .DATA_WIDTH       (DATA_WIDTH + 2) // in_data_is_pps in DATA_WIDTH-1, sof in DATA_WIDTH-2, data in DATA_WIDTH-3:0
 )
 sync_dp_ram_u
 (
@@ -105,7 +108,7 @@ sync_dp_ram_u
   .r_en             (rd_en),
   .addr_w           (addr_w[ADDR_WIDTH-2:0]),
   .addr_r           (addr_r[ADDR_WIDTH-2:0]),
-  .wr_data          ({in_sof, in_data}),
+  .wr_data          ({in_data_is_pps, in_sof, in_data}),
   .rd_data          (rd_data),
   .mem_valid        (mem_valid)
 );
@@ -114,6 +117,12 @@ always @ (posedge clk_rd or negedge rst_n)
   if (~rst_n) begin
     out_valid <= 1'b0;
     out_sof <= 1'b0;
+    out_data_is_pps <= 1'b0;
+  end
+  else if (flush) begin
+    out_valid <= 1'b0;
+    out_sof <= 1'b0;
+    out_data_is_pps <= 1'b0;
   end
   else
     out_valid <= mem_valid;
@@ -121,10 +130,13 @@ always @ (posedge clk_rd or negedge rst_n)
 always @ (posedge clk_rd)
   if (mem_valid) begin
     out_data <= rd_data[DATA_WIDTH-1:0];
-    out_sof <= rd_data[DATA_WIDTH];
+    out_sof <= rd_data[DATA_WIDTH+1-1];
+    out_data_is_pps <= rd_data[DATA_WIDTH+2-1];
   end
-  else 
+  else begin
     out_sof <= 1'b0;
+    out_data_is_pps <= 1'b0;
+  end
 
 endmodule
   

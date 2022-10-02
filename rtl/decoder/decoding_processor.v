@@ -19,14 +19,19 @@ module decoding_processor
   
   input wire fbls,
   input wire sos,
-  input wire sob, // end of block
-  input wire eob,
+  input wire eos,
+  input wire eob, // end of block
   input wire soc,
   input wire eoc,
   input wire resetLeft,
   
-  input wire header_parsed,
-  input wire enable_above_rd,
+  input wire substream0_parsed,
+  input wire substreams123_parsed,
+  input wire parse_substreams,
+  output wire stall_pull, // indication not to pull new data from pixels_buf
+  input wire neighborsAbove_rd_en,
+  input wire block_push,
+
   input wire [2:0] blockMode,
   input wire [2:0] prevBlockMode,
   input wire [2:0] bestIntraPredIdx,
@@ -70,7 +75,7 @@ wire qp_valid;
 wire tm_pReconBlk_valid;
 wire [2*8*3*14-1:0] tm_pReconBlk_p;
 wire first_header_of_slice;
-assign first_header_of_slice = header_parsed & sos;
+assign first_header_of_slice = substream0_parsed & sos;
 
 masterQp2qp masterQp2qpForTransformMode_u
 (
@@ -145,7 +150,6 @@ transform_mode transform_mode_u
 wire bp_pReconBlk_valid;
 wire [2*8*3*14-1:0] bp_pReconBlk_p;
 wire [33*3*14-1:0] pixelsAboveForBp_p;
-wire pixels_buf_rd_req;
 
 bp_mode bp_mode_u
 (
@@ -163,10 +167,9 @@ bp_mode bp_mode_u
   .maxPoint                     (maxPoint),
   .bits_per_component_coded     (bits_per_component_coded),
   
-  .sob                          (sob),
+  .substreams123_parsed         (substreams123_parsed),
   .sos                          (sos),
   .fbls                         (fbls),
-  .enable_above_rd              (enable_above_rd),
   .masterQp                     (masterQp),
   .masterQp_valid               (masterQp_valid | first_header_of_slice),
   .minQp                        (minQp),
@@ -175,7 +178,6 @@ bp_mode bp_mode_u
   .pReconLeftBlk_p              (pReconBlk_p),
   .pReconLeftBlk_valid          (pReconBlk_valid),
   
-  .neighborsAbove_rd_en         (pixels_buf_rd_req),
   .neighborsAbove_rd_p          (pixelsAboveForBp_p),
   .neighborsAbove_valid         (pixels_buf_rd_valid),
   
@@ -273,11 +275,15 @@ pixels_buf_u
   .flush                        (flush),
   .csc                          (csc),
   .sos                          (sos),
+  .eos                          (eos),
   .slice_width                  (slice_width),
   .maxPoint                     (maxPoint),
   .pReconBlk_valid              (pReconBlk_valid),
   .pReconBlk_p                  (pReconBlk_p),
-  .decoding_proc_rd_req         (pixels_buf_rd_req),
+  .parse_substreams             (parse_substreams),
+  .stall_pull                   (stall_pull),
+  .decoding_proc_rd_req         (neighborsAbove_rd_en),
+  .block_push                   (block_push),
   .pixelsAboveForTrans_p        (pixelsAboveForTrans_p),
   .pixelsAboveForBp_p           (pixelsAboveForBp_p),
   .pixelsAboveForMpp_p          (pixelsAboveForMpp_p),

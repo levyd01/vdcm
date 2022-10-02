@@ -115,8 +115,10 @@ always @ (posedge clk or negedge rst_n)
   else
     out_valid <= {MAX_NBR_SLICES{1'b0}};
 
-always @ (posedge clk)
-  if (in_sof)
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    out_sof <= {MAX_NBR_SLICES{1'b0}};
+  else if (in_sof)
     out_sof <= {MAX_NBR_SLICES{1'b1}};
   else
     for (i=0; i<MAX_NBR_SLICES; i=i+1)

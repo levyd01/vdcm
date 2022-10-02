@@ -20,9 +20,8 @@ module bp_mode
   input wire [1:0] bits_per_component_coded,
   
   input wire fbls, // First line of slice
-  input wire sob, // end of block
+  input wire substreams123_parsed,
   input wire sos,
-  input wire enable_above_rd,
   input wire [6:0] masterQp,
   input wire masterQp_valid,
   input wire [5:0] minQp,
@@ -34,7 +33,6 @@ module bp_mode
   input wire pReconLeftBlk_valid,
   input wire [2*8*3*14-1:0] pReconLeftBlk_p,
   
-  output wire neighborsAbove_rd_en,
   input wire [33*3*14-1:0] neighborsAbove_rd_p,
   input wire neighborsAbove_valid,
   
@@ -93,7 +91,7 @@ generate
       end
     end
     for (coli=0; coli<8; coli=coli+1) begin : gen_searchRangeA_coli
-      assign searchRangeA[ci][coli] = fbls_dl[2] ? meanValue[ci] : neighborsAbove_rd_p[(33*ci+ 32-coli)*14+:14];
+      assign searchRangeA[ci][coli] = fbls_dl[/*2*/1] ? meanValue[ci] : neighborsAbove_rd_p[(33*ci+ 32-coli)*14+:14];
     end
     for (coli=0; coli<25; coli=coli+1) begin : gen_searchRangeB_coli
       assign searchRangeB[ci][coli] = neighborsAbove_rd_p[(33*ci + 24-coli)*14+:14];
@@ -111,18 +109,6 @@ generate
   end
 endgenerate
 
-
-reg [2:0] sob_dl;
-always @ (posedge clk or negedge rst_n)
-  if (~rst_n)
-    sob_dl <= 3'b0;
-  else if (flush)
-    sob_dl <= 3'b0;
-  else
-    sob_dl <= {sob_dl[1:0], sob};
-
-assign neighborsAbove_rd_en = enable_above_rd & sob_dl[0];
-
 reg [2:0] blockMode_dl [1:0];
 always @ (posedge clk) begin
   blockMode_dl[0] <= blockMode;
@@ -134,6 +120,15 @@ always @ (posedge clk) begin
   bpvTable_dl[0] <= bpvTable;
   bpvTable_dl[1] <= bpvTable_dl[0];
 end
+
+reg [3:0] substreams123_parsed_dl;
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    substreams123_parsed_dl <= 4'b0;
+  else if (flush)
+    substreams123_parsed_dl <= 4'b0;
+  else
+    substreams123_parsed_dl <= {substreams123_parsed_dl[2:0], substreams123_parsed};
   
 localparam SOS_FSM_IDLE     = 3'd0;
 localparam SOS_FSM_SOS      = 3'd1;
@@ -291,7 +286,17 @@ always @ (posedge clk)
             bpv2x1_r[c][row][b][col] <= bpv2x1[c][row][b][col];
           end
 
-  
+reg bpv_ptr;
+always @ (posedge clk)
+  if (~rst_n)
+    bpv_ptr <= 1'b0;
+  else if (flush)
+    bpv_ptr <= 1'b0;
+  else if (pReconLeftBlk_valid_dl[1] & ~substreams123_parsed_dl[0])
+    bpv_ptr <= 1'b1;
+  else if (~pReconLeftBlk_valid_dl[1] & substreams123_parsed_dl[0])
+    bpv_ptr <= 1'b0;
+
 // BpMode::UpdateQp in C
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
@@ -303,7 +308,7 @@ always @ (posedge clk or negedge rst_n)
 reg [2:0] masterQpOffset;
 always @ (*)
   if (chroma_format == 2'd0)
-    masterQpOffset = fbls_dl[0] ? 3'd4 : 3'd2;
+    masterQpOffset = fbls ? 3'd4 : 3'd2;
   else
     masterQpOffset = 3'd0;
 
@@ -432,16 +437,18 @@ reg signed [13:0] pReconBlk [2:0][1:0][7:0];
 reg signed [13:0] iCoeffQClip [2:0][1:0][7:0];
 reg signed [13:0] predBlk [2:0][1:0][7:0];
 always @ (posedge clk) begin : process_pPredBlk
-  if (pReconLeftBlk_valid_dl[1] & (blockMode_dl[0] == MODE_BP)) begin
+  if (substreams123_parsed_dl[0] & (blockMode_dl[0] == MODE_BP)) begin
     for (c=0; c<3; c=c+1)
       for (b=0; b<4; b=b+1) 
-        if (bpvTable_dl[0][b]) begin
+        if (bpvTable_dl[0][b]) begin // 2x2
           for (i=0; i<partitionSize[c]; i=i+1) begin
             for (row = 0; row < blkHeight[c]; row = row + 1) begin
               //$display("time: %0t, pQuant[%0d][%0d][%0d] = %d", $realtime, c, row, x0_base[c][b] + i, pQuant[c][row][x0_base[c][b] + i]);
               //$display("time: %0t, scale[%0d] = %d\toffset[%0d] = %d\tshift[%0d] = %d", $realtime, c, scale[c], c, offset[c], c, shift[c]);
               iCoeffQClip[c][row][x0_base[c][b] + i] <= DequantSample(pQuant[c][row][x0_base[c][b] + i], scale[c], offset[c], shift[c]);
-              predBlk[c][row][x0_base[c][b] + i] <= bpv2x2[c][bpv2x2_sel[b]][row][i & 2'b11];
+              predBlk[c][row][x0_base[c][b] + i] <= ((bpv2x2_sel[b] >= 7'd32) | ((bpv2x2_sel[b] <= 7'd7) & (row == 1))) ? // Search C
+                                                                                      bpv2x2[c][bpv2x2_sel[b]][row][i & 2'b11] :
+                                                                                      bpv2x2_r[c][bpv2x2_sel[b]][row][i & 2'b11];
             end
           end
         end
@@ -449,7 +456,9 @@ always @ (posedge clk) begin : process_pPredBlk
           for (i=0; i<partitionSize[c]; i=i+1) begin
             for (row = 0; row < blkHeight[c]; row = row + 1) begin
               iCoeffQClip[c][row][x0_base[c][b] + i] <= DequantSample(pQuant[c][row][x0_base[c][b] + i], scale[c], offset[c], shift[c]);
-              predBlk[c][row][x0_base[c][b] + i] <= bpv2x1[c][row][bpv2x1_sel[b][row]][i & 2'b11];
+              predBlk[c][row][x0_base[c][b] + i] <= ((bpv2x1_sel[b][row] >= 7'd32) | ((row == 1) & (bpv2x1_sel[b][row] <= 7'd7))) ? // Search C
+                                                                                      bpv2x1[c][row][bpv2x1_sel[b][row]][i & 2'b11] : 
+                                                                                      bpv2x1_r[c][row][bpv2x1_sel[b][row]][i & 2'b11];
             end
           end
         end
@@ -457,7 +466,7 @@ always @ (posedge clk) begin : process_pPredBlk
 end
 
 always @ (posedge clk) begin : process_pReconBlk
-  if (pReconLeftBlk_valid_dl[0] & (blockMode == MODE_BP_SKIP)) begin
+  if (substreams123_parsed & (blockMode == MODE_BP_SKIP)) begin
     for (c=0; c<3; c=c+1)
       for (b=0; b<4; b=b+1) 
         if (bpvTable[b]) begin // 2x2
@@ -477,7 +486,7 @@ always @ (posedge clk) begin : process_pReconBlk
                 pReconBlk[c][row][(b<<1) + col] <= bpv2x1_r[c][row][bpv2x1_sel[b][row]][col];
         end
   end
-  else if (pReconLeftBlk_valid_dl[2] & (blockMode_dl[1] == MODE_BP)) begin
+  else if (substreams123_parsed_dl[1] & (blockMode_dl[1] == MODE_BP)) begin
     for (c=0; c<3; c=c+1)
       for (b=0; b<4; b=b+1)
         for (i=0; i<partitionSize[c]; i=i+1) begin
@@ -488,7 +497,7 @@ always @ (posedge clk) begin : process_pReconBlk
 end
 
 
-assign pReconBlk_valid = pReconLeftBlk_valid_dl[3];
+assign pReconBlk_valid = substreams123_parsed_dl[2];
 generate
   for (ci=0; ci<3; ci=ci+1) begin : gen_out_comp
     for (rowi=0; rowi<2; rowi=rowi+1) begin : gen_out_coli

@@ -89,6 +89,9 @@ always @ (posedge clk)
     end
     else
       er_addr_wr <= er_addr_wr + 1'b1;
+      
+wire er_wr_wrap;
+assign er_wr_wrap = ~first_half_of_slice_wr;
 
 wire [4*3*14-1:0] er_wr_data_p;
 wire [13:0] er_wr_data [3:0][2:0];
@@ -123,19 +126,27 @@ always @ (posedge clk or negedge rst_n)
     endcase
     
 wire er_rd_en;
-assign er_rd_en = er_start_read | (|er_rd_state);
+wire er_empty;
+assign er_rd_en = (|er_rd_state) & ~er_empty;
 
+reg er_rd_wrap;
 always @ (posedge clk)
-  if (sof)
+  if (sof) begin
     er_addr_rd <= {ER_ADDR_WIDTH{1'b0}};
+    er_rd_wrap <= 1'b0;
+  end
   else if (er_rd_en)
-    if (er_addr_rd == er_num_lines - 1'b1)
+    if (er_addr_rd == er_num_lines - 1'b1) begin
+      er_rd_wrap <= ~er_rd_wrap;
       er_addr_rd <= {ER_ADDR_WIDTH{1'b0}};
+    end
     else
       er_addr_rd <= er_addr_rd + 1'b1;
       
 wire er_data_valid;
 wire [4*3*14-1:0] er_rd_data_i_p;
+
+assign er_empty = (er_addr_rd == er_addr_wr) & ~(er_rd_wrap ^ er_wr_wrap);
 
 // Half slice size buffer 
 dp_ram
@@ -190,12 +201,17 @@ wire [OR_ADDR_WIDTH-1:0] or_num_lines;
 assign or_num_lines = slice_width>>2;
 
 reg [OR_ADDR_WIDTH-1:0] or_addr_wr;
+reg or_wr_wrap;
 always @ (posedge clk)
-  if (sof)
+  if (sof) begin
     or_addr_wr <= {OR_ADDR_WIDTH{1'b0}};
+    or_wr_wrap <= 1'b0;
+  end
   else if (odd_row_data_valid)
-    if (or_addr_wr == or_num_lines - 1'b1)
+    if (or_addr_wr == or_num_lines - 1'b1) begin
       or_addr_wr <= {OR_ADDR_WIDTH{1'b0}};
+      or_wr_wrap <= ~or_wr_wrap;
+    end
     else
       or_addr_wr <= or_addr_wr + 1'b1;
       
@@ -219,12 +235,20 @@ always @ (posedge clk or negedge rst_n)
   else if ((er_addr_rd == er_num_lines - 1'b1) & (er_rd_state == 2'd2))
     or_rd_en <= 1'b1;
     
+reg or_rd_wrap;
+wire or_empty;
+assign or_empty = (or_addr_rd == or_addr_wr) & ~(or_rd_wrap ^ or_wr_wrap);
+
 always @ (posedge clk)
-  if (sof)
+  if (sof) begin
     or_addr_rd <= {OR_ADDR_WIDTH{1'b0}};
-  else if (or_rd_en)
-    if (or_addr_rd == or_num_lines - 1'b1)
+    or_rd_wrap <= 1'b0;
+  end
+  else if (or_rd_en & ~or_empty)
+    if (or_addr_rd == or_num_lines - 1'b1) begin
       or_addr_rd <= {OR_ADDR_WIDTH{1'b0}};
+      or_rd_wrap <= ~or_rd_wrap;
+    end
     else
       or_addr_rd <= or_addr_rd + 1'b1;
       

@@ -23,6 +23,7 @@ module vdcm_decoder
   input wire [255:0] in_data,
   input wire in_valid,
   input wire in_sof,              // Start of frame
+  input wire in_data_is_pps, // in_data contains PPS before in_sof
   
   output wire [4*3*14-1:0] pixs_out,
   output wire pixs_out_eof,
@@ -32,6 +33,7 @@ module vdcm_decoder
 wire sync_buf_valid;
 wire [255:0] sync_buf_data;
 wire sync_buf_sof;
+wire sync_buf_data_is_pps;
 
 // Sync buffer
 // -----------
@@ -45,12 +47,14 @@ input_sync_buf_u
   .clk_wr                       (clk_in_int),
   .clk_rd                       (clk_core),
   .rst_n                        (rst_n),
+  .flush                        (flush),
   .in_data                      (in_data),
   .in_sof                       (in_sof),
   .in_valid                     (in_valid),
-  .out_rd_en                    (1'b1),
+  .in_data_is_pps               (in_data_is_pps),
   .out_data                     (sync_buf_data),
   .out_sof                      (sync_buf_sof),
+  .out_data_is_pps              (sync_buf_data_is_pps),
   .out_valid                    (sync_buf_valid)
   
 );
@@ -131,6 +135,7 @@ pps_regs_u
                                   
   .in_data                        (sync_buf_data),
   .in_valid                       (sync_buf_valid),
+  .data_in_is_pps                 (sync_buf_data_is_pps),
                                 
   .version_minor                  (version_minor),
   .frame_width                    (frame_width),
@@ -194,8 +199,7 @@ pps_regs_u
   .rcOffsetThreshold              (rcOffsetThreshold),
   .sliceNumDwords                 (sliceNumDwords),
   
-  .pps_valid                      (pps_valid),
-  .data_in_is_pps                 (data_in_is_pps)
+  .pps_valid                      (pps_valid)
 );
 
 wire [MAX_NBR_SLICES-1:0] slice_demux_valid;
@@ -222,7 +226,7 @@ slice_demux_u
   .in_data                      (sync_buf_data),
   .in_sof                       (sync_buf_sof),
   .in_valid                     (sync_buf_valid),
-  .data_in_is_pps               (data_in_is_pps),
+  .data_in_is_pps               (sync_buf_data_is_pps),
   
   .out_data_p                   (slice_demux_data_p),
   .out_sof                      (slice_demux_sof),
@@ -231,12 +235,13 @@ slice_demux_u
 
 );
 
-// Sice decoders
+// Slice decoders
 // -------------
 wire [4*3*14-1:0] slice_pixs_out [MAX_NBR_SLICES-1:0];
 wire [MAX_NBR_SLICES-1:0] slice_pixs_out_valid;
 wire [MAX_NBR_SLICES-1:0] slice_pixs_out_sof;
 wire [MAX_NBR_SLICES*4*3*14-1:0] slice_pixs_out_p;
+wire [MAX_NBR_SLICES-1:0] out_fifo_almost_full;
 genvar s;
 generate
   for (s=0; s<MAX_NBR_SLICES; s=s+1) begin : gen_slice_decoder
@@ -305,6 +310,8 @@ generate
       .in_sof                         (slice_demux_sof[s]),
       .in_valid                       (slice_demux_valid[s]),
       .data_in_is_pps                 (slice_demux_data_out_is_pps[s]),
+      
+      .flow_stop                      (out_fifo_almost_full[s]),
                                       
       .pixs_out                       (slice_pixs_out[s]),
       .pixs_out_sof                   (slice_pixs_out_sof[s]),
@@ -333,6 +340,8 @@ slice_mux_u
   .slice_width                  (slice_width),
   .slice_height                 (slice_height),
   .frame_height                 (frame_height),
+  
+  .fifo_almost_full             (out_fifo_almost_full),
   
   .pixs_in_p                    (slice_pixs_out_p),
   .pixs_in_valid                (slice_pixs_out_valid),

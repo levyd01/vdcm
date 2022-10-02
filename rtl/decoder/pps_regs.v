@@ -18,6 +18,7 @@ module pps_regs
   
   input wire [255:0] in_data,
   input wire in_valid,
+  input wire data_in_is_pps,
   
   output reg [1:0] version_minor,
   output reg [15:0] frame_width,
@@ -80,19 +81,10 @@ module pps_regs
   output reg [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-4-1:0] rcOffsetThreshold,
   output reg [34:0] sliceNumDwords, // after rounding chunks up to the nearest number of bytes divisible by 32
   
-  output reg pps_valid,
-  output reg data_in_is_pps
+  output reg pps_valid
 );
 
 reg [1:0] line_cnt;
-always @ (posedge clk or negedge rst_n)
-  if (~rst_n)
-    data_in_is_pps <= 1'b0;
-  else if (flush)
-    data_in_is_pps <= 1'b1;
-  else if ((line_cnt == 2'd3) & in_valid)
-    data_in_is_pps <= 1'b0;
-    
 reg [1:0] data_in_is_pps_dl;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
@@ -117,8 +109,6 @@ always @ (posedge clk or negedge rst_n)
     pps_valid <= 1'b0;
   else
     pps_valid <= pps_valid_i;
-
-//assign pps_valid = data_in_is_pps_dl[1] & ~data_in_is_pps_dl[0];
     
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)

@@ -25,14 +25,15 @@ module syntax_parser
   input wire [4*MAX_FUNNEL_SHIFTER_SIZE-1:0] data_to_be_parsed_p,
   input wire [3:0] fs_ready,
   input wire nextBlockIsFls,
-  input wire isFirstBlock,
+  input wire isFirstParse,
+  input wire isLastBlock,
   input wire ssm_sof,
   input wire sos,
   input wire [1:0] sos_fsm,
   input wire eos,
   
   output wire [9*4-1:0] size_to_remove_p,
-  output wire [3:0] size_to_remove_valid,
+  output wire size_to_remove_valid,
   
   input wire enableUnderflowPrevention,
   
@@ -44,7 +45,10 @@ module syntax_parser
   output reg [3:0] bpvTable,
   output wire [7*4-1:0] bpv2x2_p,
   output wire [7*4*2-1:0] bpv2x1_p,
-  output wire header_parsed,
+  output wire substream0_parsed,
+  output wire substreams123_parsed,
+  input wire stall_pull,
+  output wire parse_substreams,
   
   output wire [16*3*16-1:0] pQuant_r_p,
   output wire pQuant_r_valid,
@@ -146,30 +150,39 @@ localparam SOS_FSM_PARSE_SSM0 = 2'd2;
 localparam SOS_FSM_RUNTIME = 2'd3;
 
 reg [1:0] clk_cnt;
-reg parse_data_i;
+reg parse_substreams_i;
 always @ (*)
-  case (sos_fsm)
-    SOS_FSM_PARSE_SSM0: parse_data_i = fs_ready[0];
-    SOS_FSM_RUNTIME   : parse_data_i = (&fs_ready) & (clk_cnt == 2'd2);
-    SOS_FSM_FETCH_SSM0: parse_data_i = (clk_cnt == 2'd2) & eos_dl;
-    default: parse_data_i = 1'b0;
-  endcase
-//assign parse_data_i = (sos_fsm == SOS_FSM_PARSE_SSM0) ? fs_ready[0] : ((&fs_ready) & (clk_cnt == 2'd2));
-reg [4:0] parse_data_i_dl;
-always @ (posedge clk)
-  parse_data_i_dl <= {parse_data_i_dl[3:0], parse_data_i};
-wire parse_data;
-assign parse_data = parse_data_i & ~parse_data_i_dl[0];
+  if (isFirstParse)
+    parse_substreams_i = ~stall_pull & (clk_cnt == 2'd2) & fs_ready[0] & (sos_fsm == SOS_FSM_PARSE_SSM0);
+  else
+    parse_substreams_i = ~stall_pull & (clk_cnt == 2'd2) & (isLastBlock ? (|fs_ready[3:1]) : (&fs_ready));
+
+reg [4:0] parse_substreams_i_dl;
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    parse_substreams_i_dl <= 5'b0;
+  else
+    parse_substreams_i_dl <= {parse_substreams_i_dl[3:0], parse_substreams_i};
+assign parse_substreams = parse_substreams_i & ~parse_substreams_i_dl[0];
+
+reg parse_substreams_dl;
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    parse_substreams_dl <= 1'b0;
+  else if (flush | sos)
+    parse_substreams_dl <= 1'b0;
+  else
+    parse_substreams_dl <= parse_substreams;
 
 reg [MAX_FUNNEL_SHIFTER_SIZE-1:0] data_to_be_parsed_r [3:0];
 always @ (posedge clk)
   for (i=0; i<4; i=i+1)
-    if (parse_data)
+    if (parse_substreams)
       data_to_be_parsed_r[i] <= data_to_be_parsed_i[i];
 wire [MAX_FUNNEL_SHIFTER_SIZE-1:0] data_to_be_parsed [3:0];
 generate
   for (gi=0; gi<4; gi=gi+1) begin : gen_data_to_be_parsed
-    assign data_to_be_parsed[gi] = parse_data ? data_to_be_parsed_i[gi] : data_to_be_parsed_r[gi];
+    assign data_to_be_parsed[gi] = parse_substreams ? data_to_be_parsed_i[gi] : data_to_be_parsed_r[gi];
   end
 endgenerate
 
@@ -188,8 +201,6 @@ reg [1:0] nextBlockIsFls_dl;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     nextBlockIsFls_dl <= 2'b11;
-  /*if (sos_fsm == SOS_FSM_FETCH_SSM0)
-    nextBlockIsFls_dl <= 2'b11;*/
   else if (blockBits_valid)
     nextBlockIsFls_dl <= {nextBlockIsFls_dl[0], nextBlockIsFls};
 
@@ -206,7 +217,7 @@ always @ (*)
   endcase
 
 wire [2:0] bitsPerBpv;
-assign bitsPerBpv = nextBlockIsFls_dl[0] ? 3'd5 : 3'd6;
+assign bitsPerBpv = nextBlockIsFls/*_dl[0]*/ ? 3'd5 : 3'd6;
 
 reg [8:0] bit_pointer [3:0];
 reg modeSameFlag;
@@ -253,7 +264,7 @@ always @ (*) begin : proc_parser_0
     end
   end
   
-  if (~eos_dl) begin
+  if (~eos) begin
     modeSameFlag = data_to_be_parsed[0][bit_pointer[0]];
     bit_pointer[0] = bit_pointer[0] + 1'b1;
     // DecodeModeHeader in C
@@ -285,7 +296,7 @@ always @ (*) begin : proc_parser_0
   
     case (curBlockMode) // Line #262 in DecTop.cpp - switch (modeNext) { ... }
       MODE_TRANSFORM: // DecodeBestIntraPredictor in C
-        if (~nextBlockIsFls_dl[0]) begin
+        if (~nextBlockIsFls) begin
           nextBlockBestIntraPredIdx = {data_to_be_parsed[0][bit_pointer[0]], data_to_be_parsed[0][bit_pointer[0]+1], data_to_be_parsed[0][bit_pointer[0]+2]};
           bit_pointer[0] = bit_pointer[0] + 2'd3;
         end
@@ -385,7 +396,7 @@ always @ (*) begin : proc_parser_0
             else
               bpv2x2_i_0 = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:6], 6);
             bit_pointer[0] = bit_pointer[0] + bitsPerBpv;
-            if (nextBlockIsFls_dl[0])
+            if (nextBlockIsFls)
               bpv2x2_i_0 = bpv2x2_i_0 + 6'd32;
           end
           else begin // bpv2x1
@@ -403,7 +414,7 @@ always @ (*) begin : proc_parser_0
               bpv2x1_i_0[1] = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:6], 6);
               bit_pointer[0] = bit_pointer[0] + 9'd6;
             end
-            if (nextBlockIsFls_dl[0]) begin
+            if (nextBlockIsFls) begin
               bpv2x1_i_0[0] = bpv2x1_i_0[0] + 7'd32;
               bpv2x1_i_0[1] = bpv2x1_i_0[1] + 7'd32;
             end
@@ -448,7 +459,7 @@ endfunction
 // Ssm 1 to 3
 // ----------
 wire [2:0] bitsPerBpv_dl;
-assign bitsPerBpv_dl = nextBlockIsFls_dl[1] ? 3'd5 : 3'd6;
+assign bitsPerBpv_dl = nextBlockIsFls_dl[0] ? 3'd5 : 3'd6;
 
 reg [2:0] isCompSkip;
 reg [3:0] lastSigPos [2:0];
@@ -533,7 +544,7 @@ always @ (*) begin : proc_parser_123
           bpv2x2_i[c] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
           bit_pointer[curSubstream] = bit_pointer[curSubstream] + 9'd6;
         end
-        if (nextBlockIsFls_dl[1])
+        if (nextBlockIsFls_dl[0])
           bpv2x2_i[c] = bpv2x2_i[c] + 6'd32;
       end
       else begin // bpv2x1
@@ -549,7 +560,7 @@ always @ (*) begin : proc_parser_123
           bpv2x1_i[c][1] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
           bit_pointer[curSubstream] = bit_pointer[curSubstream] + 9'd6;
         end
-        if (nextBlockIsFls_dl[1]) begin
+        if (nextBlockIsFls_dl[0]) begin
           bpv2x1_i[c][0] = bpv2x1_i[c][0] + 6'd32;
           bpv2x1_i[c][1] = bpv2x1_i[c][1] + 6'd32;
         end
@@ -884,16 +895,9 @@ always @ (posedge clk or negedge rst_n)
       bit_pointer_r[c] <= 9'd0;
   else
     for (c = 0; c < 4; c = c + 1)
-      if (parse_data)
+      if (parse_substreams)
         bit_pointer_r[c] <= bit_pointer[c];
 		
-reg parse_data_dl;
-always @ (posedge clk or negedge rst_n)
-  if (~rst_n)
-    parse_data_dl <= 1'b0;
-  else
-    parse_data_dl <= parse_data;
-
 reg signed [15:0] mppBlockQuant_r [2:0][15:0]; // TBD bit width of each element of the array
 reg signed [15:0] pQuant_r [2:0][15:0]; // TBD bit width of each element of the array
 always @ (posedge clk or negedge rst_n)
@@ -906,7 +910,7 @@ always @ (posedge clk or negedge rst_n)
       for (s = 0; s < 16; s = s + 1)
         pQuant_r[c][s] <= 16'sd0;
   else
-    if (parse_data)
+    if (parse_substreams)
       for (c = 0; c < 3; c = c + 1)
         for (s = 0; s < compNumSamples[c]; s = s + 1)
           if ((curBlockMode_r == MODE_MPP) | (curBlockMode_r == MODE_MPPF))
@@ -939,7 +943,7 @@ always @ (*) begin
 end
 
 always @ (posedge clk) begin
-  if (parse_data) begin
+  if (parse_substreams) begin
     curBlockMode_r <= curBlockMode;
     prevBlockMode_r <= curBlockMode_r;
     flatnessFlag_r <= flatnessFlag;
@@ -970,36 +974,42 @@ always @ (posedge clk or negedge rst_n)
     blockMode <= curBlockMode_r;
   end
 
-reg header_parsed_i;
+reg substream0_parsed_i;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
-    header_parsed_i <= 1'b0;
-  else if (header_parsed_i)
-    header_parsed_i <= 1'b0;
-  else if (fs_ready[0] & (clk_cnt == 2'd2))
-    header_parsed_i <= 1'b1;
-assign header_parsed = header_parsed_i & ~(isFirstBlock & (sos_fsm == SOS_FSM_RUNTIME));
+    substream0_parsed_i <= 1'b0;
+  else if (substream0_parsed_i)
+    substream0_parsed_i <= 1'b0;
+  else if (isFirstParse)
+    substream0_parsed_i <= fs_ready[0];
+  else if (isLastBlock)
+    substream0_parsed_i <= 1'b0;
+  else
+    substream0_parsed_i <= (&fs_ready) & (clk_cnt == 2'd2);
+assign substream0_parsed = substream0_parsed_i & parse_substreams_dl & (sos_fsm >= 2'd2);
     
-reg [2:0] data_parsed;
+reg [2:0] substream_parsed;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
-    data_parsed <= 3'b0;
+    substream_parsed <= 3'b0;
   else 
     for (c = 0; c < 3; c = c + 1)
-      if (data_parsed[c])
-        data_parsed[c] <= 1'b0;
-      else if (fs_ready[c+1] & (clk_cnt == 2'd2))
-        data_parsed[c] <= 1'b1;
+      if (substream_parsed[c])
+        substream_parsed[c] <= 1'b0;
+      else if (fs_ready[c+1] & (clk_cnt == 2'd2) & parse_substreams)
+        substream_parsed[c] <= 1'b1;
     
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     clk_cnt <= 2'd0;
-  else if (header_parsed)
+  else if (substream0_parsed)
     clk_cnt <= 2'd0;
   else if (clk_cnt < 2'd2)
     clk_cnt <= clk_cnt + 1'b1;
     
-assign size_to_remove_valid = {data_parsed, header_parsed};
+assign size_to_remove_valid = (&substream_parsed) & substream0_parsed;
+
+assign substreams123_parsed = isLastBlock ? |substream_parsed : &substream_parsed;
     
 genvar si;    
 generate
@@ -1011,7 +1021,7 @@ generate
   end
 endgenerate
 
-assign pQuant_r_valid = blockBits_valid;//parse_data_dl & ~sos;
+assign pQuant_r_valid = blockBits_valid;
 
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
@@ -1019,11 +1029,11 @@ always @ (posedge clk or negedge rst_n)
   else if (flush | (sos_fsm == SOS_FSM_IDLE))
     blockBits_valid <= 1'b0;
   else
-    blockBits_valid <= parse_data_i_dl[3] & ~parse_data_i_dl[4] & (sos_fsm != SOS_FSM_PARSE_SSM0); // There is no data available to parse in the beginning of the slice.
+    blockBits_valid <= parse_substreams & ~isFirstParse; // There is no data available to parse in the beginning of the slice.
 
 reg [8:0] curBlockBits0_dl; // extra delay for ssm 0 because it arrives one block before the other ssms
 always @ (posedge clk)
-  if (size_to_remove_valid[0]) 
+  if (substream0_parsed) 
     curBlockBits0_dl <= bit_pointer_r[0];
     
 reg [13:0] curBlockBits_d;
@@ -1033,20 +1043,20 @@ always @ (*) begin
       curBlockBits_d = curBlockBits_d + bit_pointer[c];
 end
 always @ (posedge clk)
-  if (parse_data)
+  if (parse_substreams)
     blockBits <= curBlockBits_d;
 
 reg blockBits_valid_dl;    
 always @ (posedge clk)
-  if (sos & size_to_remove_valid[0])
+  if (sos & substream0_parsed)
     blockBits_valid_dl <= 1'b0;
   else
     blockBits_valid_dl <= blockBits_valid;
 
 always @ (posedge clk)
-  if (sos & size_to_remove_valid[0])
+  if (sos & substream0_parsed)
     prevBlockBitsWithoutPadding <= 14'd0;
-  else if (|size_to_remove_valid[3:1]) begin
+  else if (|substream_parsed) begin
     if (enableUnderflowPrevention & ((curBlockMode_r == MODE_TRANSFORM) | (curBlockMode_r == MODE_BP)))
       prevBlockBitsWithoutPadding <= blockBits - rcStuffingBitsX9; 
     else
@@ -1054,7 +1064,7 @@ always @ (posedge clk)
   end
 assign prevBlockBitsWithoutPadding_valid = blockBits_valid_dl;
 
-assign mpp_ctrl_valid = parse_data;
+assign mpp_ctrl_valid = parse_substreams;
 
 endmodule
 

@@ -36,6 +36,7 @@ module substream_demux
   input wire isLastBlock,
   
   output wire start_decode,
+  input wire disable_rcb_rd,
   output wire ssm_sof,
   output wire sos_for_rc,
   output reg [1:0] sos_fsm,
@@ -43,8 +44,9 @@ module substream_demux
   output wire [4*MAX_FUNNEL_SHIFTER_SIZE-1:0] data_to_be_parsed_p,
   output wire [3:0] fs_ready,
 
+  input wire substream0_parsed,
   input wire [9*4-1:0] size_to_remove_p,
-  input wire [3:0] size_to_remove_valid
+  input wire size_to_remove_valid
 
 );
 
@@ -61,11 +63,18 @@ generate
 endgenerate
 
 reg [RATE_BUFF_ADDR_WIDTH-1:0] rate_buffer_addr_w;
+reg nbr_wrap_around_wr;
 always @ (posedge clk)
   if (in_valid)
-    if (in_sof | (rate_buffer_addr_w == RATE_BUFF_NUM_LINES-1))
+    if (in_sof) begin
       rate_buffer_addr_w <= {RATE_BUFF_ADDR_WIDTH{1'b0}};
-    else
+      nbr_wrap_around_wr <= 1'b0;
+    end
+    else if (rate_buffer_addr_w == RATE_BUFF_NUM_LINES-1) begin
+      rate_buffer_addr_w <= {RATE_BUFF_ADDR_WIDTH{1'b0}};
+      nbr_wrap_around_wr <= ~nbr_wrap_around_wr;
+    end
+    else 
       rate_buffer_addr_w <= rate_buffer_addr_w + 1'b1;
 
 reg w_en;
@@ -80,38 +89,25 @@ always @ (posedge clk or negedge rst_n)
       for(b=0; b<32; b=b+1)
         wr_data[8*b+:8] = in_data[(31-b)*8+:8];
   end
-  
-reg [15:0] totalDelay_calc;
-reg [7:0] totalDelay;
-always @ (posedge clk or negedge rst_n)
-  if (~rst_n) begin
-    totalDelay <= 8'd0;
-    totalDelay_calc <= 16'd0;
-  end
-  else if (in_sof) begin
-    totalDelay_calc <= 16'd0;
-    totalDelay <= 8'd0;
-  end
-  else if (totalDelay_calc <= rc_buffer_max_size) begin
-    totalDelay_calc <= totalDelay_calc + bits_per_pixel;
-    totalDelay <= totalDelay + 1'b1;
-  end
-    
-reg [9:0] initDecodeDelay;
+
+// Convert rc_init_tx_delay from block time to number of in_data input words    
+reg [15:0] initDecodeDelay_i;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n) 
-    initDecodeDelay <= 10'h3ff;
-  else if (in_sof) 
-    initDecodeDelay <= 10'hff;
-  else if (totalDelay_calc > rc_buffer_max_size)
-    initDecodeDelay <= (totalDelay - 1'b1 - rc_init_tx_delay) << 2;
-    
+    initDecodeDelay_i <= 16'hffff;
+  else if (in_sof)
+    initDecodeDelay_i <= (rc_init_tx_delay * bits_per_pixel); // TBD !!!! Avoid the multiplier with sequential add & shift
+wire [9:0] initDecodeDelay;
+assign initDecodeDelay = initDecodeDelay_i >> 8;
 
-    
 reg [9:0] initDecodeDelayCnt;
 reg rate_buf_read_allowed;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n) begin
+    initDecodeDelayCnt <= 10'd0;
+    rate_buf_read_allowed <= 1'b0;
+  end
+  else if (early_eos) begin
     initDecodeDelayCnt <= 10'd0;
     rate_buf_read_allowed <= 1'b0;
   end
@@ -120,7 +116,7 @@ always @ (posedge clk or negedge rst_n)
       initDecodeDelayCnt <= 10'd0;
       rate_buf_read_allowed <= 1'b0;
     end
-    else if (initDecodeDelayCnt < initDecodeDelay)
+    else if ((initDecodeDelayCnt < initDecodeDelay) & ~data_in_is_pps)
       initDecodeDelayCnt <= initDecodeDelayCnt + 1'b1;
     else if (~data_in_is_pps)
       rate_buf_read_allowed <= 1'b1;
@@ -188,25 +184,19 @@ rate_buffer_u
   .wr_data                      (wr_data),
   .w_en                         (w_en),
   
-  .r_en                          (rd_en),
-  .addr_r                        (rate_buffer_addr_r),
-  .rd_data                       (rd_data),
-  .mem_valid                     (rd_valid) 
+  .r_en                         (rd_en),
+  .addr_r                       (rate_buffer_addr_r),
+  .rd_data                      (rd_data),
+  .mem_valid                    (rd_valid) 
 );
 
-reg nbr_wrap_around_wr;
 reg nbr_wrap_around_rd;
 always @ (posedge clk or negedge rst_n)
-  if (~rst_n) begin
-    nbr_wrap_around_wr <= 1'b0;
+  if (~rst_n) 
     nbr_wrap_around_rd <= 1'b0;
-  end
-  else begin
-    if (w_en & (rate_buffer_addr_w == RATE_BUFF_NUM_LINES-1))
-      nbr_wrap_around_wr <= ~nbr_wrap_around_wr;
-    if (rd_en & (rate_buffer_addr_r == RATE_BUFF_NUM_LINES-1))
-      nbr_wrap_around_rd <= ~nbr_wrap_around_rd;
-  end
+  else if (rd_en & (rate_buffer_addr_r == RATE_BUFF_NUM_LINES-1))
+    nbr_wrap_around_rd <= ~nbr_wrap_around_rd;
+    
 wire buffer_empty;
 assign buffer_empty = ~(nbr_wrap_around_wr ^ nbr_wrap_around_rd) & (rate_buffer_addr_w == rate_buffer_addr_r);
 wire buffer_full;
@@ -236,7 +226,7 @@ always @ (posedge clk or negedge rst_n)
     fsm_cnt <= 2'd0;
   else if ((sos_fsm == SOS_FSM_IDLE) | (early_eos & ~eof))
     fsm_cnt <= 2'd0;
-  else
+  else if ((sos_fsm == SOS_FSM_FETCH_SSM0) | (sos_fsm == SOS_FSM_PARSE_SSM0))
     fsm_cnt <= fsm_cnt + 1'b1;  
   
 always @ (posedge clk or negedge rst_n)
@@ -249,7 +239,7 @@ always @ (posedge clk or negedge rst_n)
       SOS_FSM_IDLE      : if (start_decode) sos_fsm <= SOS_FSM_FETCH_SSM0;
       SOS_FSM_FETCH_SSM0: if (fsm_cnt == 2'd3) sos_fsm <= SOS_FSM_PARSE_SSM0;
       SOS_FSM_PARSE_SSM0: if (fsm_cnt == 2'd3) sos_fsm <= SOS_FSM_RUNTIME;
-      SOS_FSM_RUNTIME   : if (early_eos) sos_fsm <= eof ? SOS_FSM_IDLE : SOS_FSM_FETCH_SSM0;
+      SOS_FSM_RUNTIME   : if (early_eos) sos_fsm <= SOS_FSM_IDLE;
     endcase
 
 wire sos_rd_en;
@@ -313,7 +303,7 @@ always @ (posedge clk or negedge rst_n)
     else if ((|mux_word_valid) & rd_en) // Push and pull simultaneously
       commonByteBufferFullness <= commonByteBufferFullness - (num_mux_word_valid*ssm_max_se_size[7:3]) + rd_data_fullness;
 
-assign rd_en = rate_buf_read_allowed_dl & (commonByteBufferFullness <= (ssm_max_se_size[7:3]<<2)) & (sos_rd_en | (sos_fsm == SOS_FSM_RUNTIME));
+assign rd_en = rate_buf_read_allowed_dl & (commonByteBufferFullness <= (ssm_max_se_size[7:3]<<2)) & (sos_rd_en | (sos_fsm == SOS_FSM_RUNTIME)) & ~buffer_empty & ~disable_rcb_rd;
 
 reg [5:0] rd_data_fullness_dl;
 always @ (posedge clk)
@@ -416,7 +406,7 @@ always @ (posedge clk or negedge rst_n)
 
 wire [3:0] mux_word_request;
 wire en_mux_word_request;
-assign en_mux_word_request = (((pos_in_block == 2'd0) & ~ssm_sof) | ssm_sof) & ~eos;
+assign en_mux_word_request = (((pos_in_block == 2'd0) & ~ssm_sof) | ssm_sof) & ~eos & (commonByteBufferFullness >= (ssm_max_se_size[7:3]<<2)) & ~disable_rcb_rd;
 assign mux_word_request[0] = (sos_fsm != SOS_FSM_IDLE) & ((sos_fsm == SOS_FSM_FETCH_SSM0) ? sos_mux_word_request_0 : mux_word_request_i[0]) & ~mux_word_valid[0] & en_mux_word_request;
 assign mux_word_request[1] = rate_buf_read_allowed & mux_word_request_i[1] & ~mux_word_valid[1] & ((sos_fsm == SOS_FSM_PARSE_SSM0) | (sos_fsm == SOS_FSM_RUNTIME)) & en_mux_word_request;
 assign mux_word_request[2] = rate_buf_read_allowed & mux_word_request_i[2] & ~mux_word_valid[2] & ((sos_fsm == SOS_FSM_PARSE_SSM0) | (sos_fsm == SOS_FSM_RUNTIME)) & en_mux_word_request;
@@ -434,10 +424,13 @@ assign flush_fs[1] = in_sof | early_eos;
 assign flush_fs[2] = in_sof | early_eos;
 assign flush_fs[3] = in_sof | early_eos;
 
+wire [3:0] size_to_remove_valid_i;
+assign size_to_remove_valid_i[0] = (sos_fsm == SOS_FSM_PARSE_SSM0) ? substream0_parsed : size_to_remove_valid;
+assign size_to_remove_valid_i[3:1] = {size_to_remove_valid, size_to_remove_valid, size_to_remove_valid};
+
 wire [MAX_FUNNEL_SHIFTER_SIZE-1:0] data_to_be_parsed [3:0];
 generate
   for (gi=0; gi<4; gi=gi+1) begin : gen_ssmFunnelShifter   
-    
     ssmFunnelShifter
     #(
       .MAX_FUNNEL_SHIFTER_SIZE      (MAX_FUNNEL_SHIFTER_SIZE)
@@ -457,7 +450,7 @@ generate
       .data_to_be_parsed            (data_to_be_parsed[gi]),
       .ready                        (fs_ready[gi]),
       .size_to_remove               (size_to_remove[gi]),
-      .size_to_remove_valid         (size_to_remove_valid[gi])
+      .size_to_remove_valid         (size_to_remove_valid_i[gi])
     );
   end
 endgenerate

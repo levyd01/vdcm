@@ -71,6 +71,8 @@ module slice_decoder
   input wire in_valid,
   input wire data_in_is_pps,
   
+  input wire flow_stop,
+  
   output wire [4*3*14-1:0] pixs_out, // 4 pixels: {p3c2, p3c1, p3c0, p2c2, p2c1, p2c0, p1c2, p1c1, p1c0, p0c2, p0c1, p0c0}
   output wire pixs_out_sof,
   output wire pixs_out_valid
@@ -83,16 +85,21 @@ wire sos;
 wire eos;
 wire early_eos;
 wire eof;
-wire sob;
 wire eob;
 wire fbls;
 wire resetLeft;
 wire isEvenChunk;
-wire header_parsed;
-wire isLastBlock; // One block earlier than eos
-wire isFirstBlock;
+wire substream0_parsed;
+wire isFirstParse; // Parse Subsstream 0 one block-time ahead of other subsreams
+wire isFirstBlock; // First time in slice substreams 1 2 3 are parsed
+wire isLastBlock; // Last time in slice substreams 1 2 3 are parsed
 wire nextBlockIsFls;
-wire enable_above_rd;
+wire neighborsAbove_rd_en;
+wire block_push;
+wire [1:0] sos_fsm;
+wire parse_substreams;
+wire substreams123_parsed;
+wire sof;
 
 block_position
 #(
@@ -103,39 +110,44 @@ block_position_u
 (
   .clk                          (clk),
   .rst_n                        (rst_n),
-  .flush                        (flush | (in_sof & in_valid)),
+  .flush                        (flush),
   
   .slice_width                  (slice_width),
   .slice_height                 (slice_height),
   .frame_height                 (frame_height),
                                 
   .start_decode                 (start_decode),
-  .header_parsed                (header_parsed),
+  .in_valid                     (in_valid),
+  .in_sof                       (in_sof),
+  .parse_substreams             (parse_substreams),
+  .substream0_parsed            (substream0_parsed),
+  .substreams123_parsed         (substreams123_parsed),
+  .sof                          (sof),
   .soc                          (soc),
   .eoc                          (eoc),
   .sos                          (sos),
   .eos                          (eos),
   .early_eos                    (early_eos),
   .eof                          (eof),
-  .sob                          (sob),
   .eob                          (eob),
   .fbls                         (fbls),
+  .isFirstParse                 (isFirstParse),
   .isFirstBlock                 (isFirstBlock),
   .isLastBlock                  (isLastBlock),
   .nextBlockIsFls               (nextBlockIsFls),
-  .enable_above_rd              (enable_above_rd),
+  .neighborsAbove_rd_en         (neighborsAbove_rd_en),
+  .block_push                   (block_push),
   .resetLeft                    (resetLeft),
   .isEvenChunk                  (isEvenChunk)
 );
 
 wire [9*4-1:0] size_to_remove_p;
-wire [3:0] size_to_remove_valid;
+wire size_to_remove_valid;
 parameter MAX_FUNNEL_SHIFTER_SIZE = 2*248 - 1;
 wire [4*MAX_FUNNEL_SHIFTER_SIZE-1:0] data_to_be_parsed_p;
 wire [3:0] fs_ready;
 wire ssm_sof;
 wire sos_for_rc;
-wire [1:0] sos_fsm;
 
 substream_demux
 #(
@@ -169,9 +181,11 @@ substream_demux_u
   .data_in_is_pps               (data_in_is_pps),
   
   .start_decode                 (start_decode),
+  .disable_rcb_rd               (flow_stop),
   .sos_for_rc                   (sos_for_rc),
   .sos_fsm                      (sos_fsm),
   
+  .substream0_parsed            (substream0_parsed),
   .data_to_be_parsed_p          (data_to_be_parsed_p),
   .fs_ready                     (fs_ready),
   .size_to_remove_p             (size_to_remove_p),
@@ -199,6 +213,7 @@ wire [1:0] blockCsc;
 wire [3:0] blockStepSize;
 wire mppfIndex;
 wire mpp_ctrl_valid;
+wire stall_pull;
 
 syntax_parser
 #(
@@ -219,7 +234,8 @@ syntax_parser_u
                                 
   .data_to_be_parsed_p          (data_to_be_parsed_p),
   .nextBlockIsFls               (nextBlockIsFls),
-  .isFirstBlock                 (isFirstBlock),
+  .isFirstParse                 (isFirstParse),
+  .isLastBlock                  (isLastBlock),
   .sos                          (sos),
   .ssm_sof                      (ssm_sof),
   .sos_fsm                      (sos_fsm),
@@ -239,7 +255,10 @@ syntax_parser_u
   .bpv2x2_p                     (bpv2x2_p),
   .bpv2x1_p                     (bpv2x1_p),
   .bpvTable                     (bpvTable),
-  .header_parsed                (header_parsed),
+  .substream0_parsed            (substream0_parsed),
+  .substreams123_parsed         (substreams123_parsed),
+  .stall_pull                   (stall_pull),
+  .parse_substreams             (parse_substreams),
   .pQuant_r_p                   (pQuant_p),
   .pQuant_r_valid               (pQuant_valid),
   .blockBits                    (blockBits),
@@ -273,15 +292,19 @@ decoding_processor_u
                                 
   .fbls                         (fbls),
   .sos                          (sos),
-  .sob                          (sob),
+  .eos                          (eos),
   .eob                          (eob),
   .soc                          (soc),
   .eoc                          (eoc),
   .resetLeft                    (resetLeft),
   .slice_width                  (slice_width),
   
-  .header_parsed                (header_parsed),
-  .enable_above_rd              (enable_above_rd),
+  .substreams123_parsed         (substreams123_parsed),
+  .substream0_parsed            (substream0_parsed),
+  .stall_pull                   (stall_pull),
+  .parse_substreams             (parse_substreams),
+  .neighborsAbove_rd_en         (neighborsAbove_rd_en),
+  .block_push                   (block_push),
   .blockMode                    (blockMode),
   .prevBlockMode                (prevBlockMode),
   .bestIntraPredIdx             (bestIntraPredIdx),
@@ -379,9 +402,11 @@ dec_rate_control_u
   .flatness_qp_lut_p            (flatness_qp_lut_p),
   .rcOffsetThreshold            (rcOffsetThreshold),
   
-  .sof                          (start_decode),
+  .sof                          (sof),
   .sos                          (sos),
   .eoc                          (eoc),
+  .substreams123_parsed         (substreams123_parsed),
+  .isFirstBlock                 (isFirstBlock),
   .isLastBlock                  (isLastBlock),
   .fbls                         (fbls),
   .isEvenChunk                  (isEvenChunk),
@@ -412,7 +437,7 @@ output_buffers_u
   .rst_n                        (rst_n),
   .flush                        (flush),
   
-  .sof                          (start_decode),
+  .sof                          (sof),
   .slice_width                  (slice_width),
 
   .cscBlk_valid                 (cscBlk_valid),
