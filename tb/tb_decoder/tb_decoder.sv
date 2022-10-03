@@ -147,7 +147,7 @@ initial begin
 end
   
 wire [4*3*14-1:0] pixs_out;
-wire pixs_out_valid;
+wire [3:0] pixs_out_valid;
 wire pixs_out_eof; //stop writing to file after the last 4 pixels of the frame
 wire [3:0] pixs_out_eol; // indicates position of last valid pixel on the line
 
@@ -172,7 +172,6 @@ uut
   .in_data_is_pps       (in_data_is_pps), // in_data contains PPS before in_sof
   
   .pixs_out             (pixs_out),
-  .pixs_out_eol         (pixs_out_eol),
   .pixs_out_eof         (pixs_out_eof),
   .pixs_out_valid       (pixs_out_valid)
 
@@ -206,33 +205,17 @@ endgenerate
 always @ (posedge clk_out_int)
   pixs_out_eof_dl <= pixs_out_eof;
   
-integer pixels_in_last_nibble;
-always @ (pixs_out_eol)
-  if (pixs_out_eol != 4'd0)
-    case(pixs_out_eol)
-      4'b0001: pixels_in_last_nibble = 1;
-      4'b0010: pixels_in_last_nibble = 2;
-      4'b0100: pixels_in_last_nibble = 3;
-      4'b1000: pixels_in_last_nibble = 4;
-    endcase
-  else
-    pixels_in_last_nibble = 4;
-  
 integer cp;
 integer c;
 always @ (negedge clk_out_int)
-  if (pixs_out_valid & ~pixs_out_eof_dl)
-    for (c=0; c<pixels_in_last_nibble; c=c+1)
-      for (cp=0; cp<3; cp=cp+1)
-        if (CompBitWidth == 8)
-           $fwrite(output_image_file, "%c", pixs_out_unpacked[c][cp][7:0]);
-         else
-           $fwrite(output_image_file, "%s", {2'b0, pixs_out_unpacked[c][cp][13:0]});
-          
-integer pixs_count = 0;
-always @ (negedge clk_out_int)
-  if (pixs_out_valid & ~pixs_out_eof_dl)
-    pixs_count = pixs_count + 4;
+  if (~pixs_out_eof_dl)
+    for (c=0; c<4; c=c+1)
+      if (pixs_out_valid[c])
+        for (cp=0; cp<3; cp=cp+1)
+          if (CompBitWidth == 8)
+             $fwrite(output_image_file, "%c", pixs_out_unpacked[c][cp][7:0]);
+           else
+             $fwrite(output_image_file, "%s", {2'b0, pixs_out_unpacked[c][cp][13:0]});
 
 /////////////////////////
 // Validation

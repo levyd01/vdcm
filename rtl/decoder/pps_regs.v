@@ -132,7 +132,13 @@ integer i;
 wire [39:0] slice_num_bits_a;
 assign slice_num_bits_a = {in_data_gated[27*8+:8], in_data_gated[28*8+:8], in_data_gated[29*8+:8], in_data_gated[30*8+:8], in_data_gated[31*8+:8]};
 wire [3:0] slices_per_line_1_1_a; // only support slices_per_line = 2^n, limited to 8
-assign slices_per_line_1_1_a = {6'b0, (frameWidthRoundedUp>>3) == slice_width, (frameWidthRoundedUp>>2) == slice_width, (frameWidthRoundedUp>>1) == slice_width, frameWidthRoundedUp == slice_width};
+assign slices_per_line_1_1_a = {6'b0,
+                                ((frameWidthRoundedUp>>3) >= (slice_width - 4'd8)) & ((frameWidthRoundedUp>>3) <= (slice_width + 4'd8)),
+                                ((frameWidthRoundedUp>>2) >= (slice_width - 4'd8)) & ((frameWidthRoundedUp>>2) <= (slice_width + 4'd8)),
+                                ((frameWidthRoundedUp>>1) >= (slice_width - 4'd8)) & ((frameWidthRoundedUp>>1) <= (slice_width + 4'd8)),
+                                (frameWidthRoundedUp >= (slice_width - 4'd8))      & (frameWidthRoundedUp <= (slice_width + 4'd8))};
+
+reg [3:0] slices_per_line_1_1;
 wire [$clog2(MAX_SLICE_WIDTH)-3-1:0] numBlocksInLine;
 reg [$clog2(MAX_SLICE_WIDTH)-3+16-1:0] blocksInLine_mult_rcFullnessOffsetThreshold;
 reg [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-4-1:0] numBlocksInSlice;
@@ -174,6 +180,7 @@ always @ (posedge clk)
             max_qp_lut[i] <= in_data_gated[(24+i)*8+:8];
           end
           numBlocksInSlice <= numBlocksInLine * (slice_height >> 1);
+          slices_per_line_1_1 <= slices_per_line_1_1_a;
         end
       2'd2:
         begin
@@ -198,8 +205,8 @@ always @ (posedge clk)
             slice_pad_x <= in_data_gated[6*8+:3];
           end
           else begin // Only support 1, 2, 4 and 8 slices per line in v1.1
-            slices_per_line <= slices_per_line_1_1_a;
-            case (slices_per_line_1_1_a)
+            slices_per_line <= slices_per_line_1_1;
+            case (slices_per_line_1_1)
               4'd1: slice_pad_x <= 4'd8 - (frame_width      & 3'b111);
               4'd2: slice_pad_x <= 4'd8 - ((frame_width>>1) & 3'b111);
               4'd4: slice_pad_x <= 4'd8 - ((frame_width>>2) & 3'b111);

@@ -79,7 +79,7 @@ wire [1:0] blkHeight [2:0];
 wire [6:0] qp [2:0];
 wire signed [15:0] pQuant [2:0][1:0][7:0];
 wire signed [13:0] minPoint [2:0];
-reg [2:0] fbls_dl;
+reg fbls_dl;
 reg [12:0] meanValue [2:0];
 
 generate
@@ -91,7 +91,7 @@ generate
       end
     end
     for (coli=0; coli<8; coli=coli+1) begin : gen_searchRangeA_coli
-      assign searchRangeA[ci][coli] = fbls_dl[/*2*/1] ? meanValue[ci] : neighborsAbove_rd_p[(33*ci+ 32-coli)*14+:14];
+      assign searchRangeA[ci][coli] = fbls_dl ? meanValue[ci] : neighborsAbove_rd_p[(33*ci+ 32-coli)*14+:14];
     end
     for (coli=0; coli<25; coli=coli+1) begin : gen_searchRangeB_coli
       assign searchRangeB[ci][coli] = neighborsAbove_rd_p[(33*ci + 24-coli)*14+:14];
@@ -300,11 +300,11 @@ always @ (posedge clk)
 // BpMode::UpdateQp in C
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
-    fbls_dl <= 3'b111;
+    fbls_dl <= 1'b1;
   else if (flush)
-    fbls_dl <= 3'b111;
+    fbls_dl <= 1'b1;
   else if (qp_valid)
-    fbls_dl <= {fbls_dl[1:0], fbls};
+    fbls_dl <= fbls;
 reg [2:0] masterQpOffset;
 always @ (*)
   if (chroma_format == 2'd0)

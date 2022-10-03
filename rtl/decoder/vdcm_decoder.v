@@ -27,8 +27,7 @@ module vdcm_decoder
   
   output wire [4*3*14-1:0] pixs_out,
   output wire pixs_out_eof,
-  output wire [3:0] pixs_out_eol,
-  output wire pixs_out_valid
+  output wire [3:0] pixs_out_valid
 );
 
 wire sync_buf_valid;
@@ -353,7 +352,6 @@ slice_mux_u
   
   .pixs_out                     (pixs_out),
   .pixs_out_valid               (pixs_out_valid),
-  .pixs_out_eol                 (pixs_out_eol),
   .pixs_out_eof                 (pixs_out_eof)
 );
   
