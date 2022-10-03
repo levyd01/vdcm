@@ -27,6 +27,7 @@ module vdcm_decoder
   
   output wire [4*3*14-1:0] pixs_out,
   output wire pixs_out_eof,
+  output wire [3:0] pixs_out_eol,
   output wire pixs_out_valid
 );
 
@@ -99,6 +100,7 @@ wire [3:0] chunk_adj_bits;
 wire [15:0] num_extra_mux_bits;
 wire [9:0] slices_per_line;
 wire [2:0] slice_pad_x;
+wire [3:0] eoc_valid_pixs;
 wire [3:0] mpp_min_step_size;
 wire pps_valid;
 wire data_in_is_pps;
@@ -177,6 +179,7 @@ pps_regs_u
   .num_extra_mux_bits             (num_extra_mux_bits),
   .slices_per_line                (slices_per_line),
   .slice_pad_x                    (slice_pad_x),
+  .eoc_valid_pixs                 (eoc_valid_pixs),
   .mpp_min_step_size              (mpp_min_step_size),
   
   
@@ -340,6 +343,7 @@ slice_mux_u
   .slice_width                  (slice_width),
   .slice_height                 (slice_height),
   .frame_height                 (frame_height),
+  .eoc_valid_pixs               (eoc_valid_pixs),
   
   .fifo_almost_full             (out_fifo_almost_full),
   
@@ -349,6 +353,7 @@ slice_mux_u
   
   .pixs_out                     (pixs_out),
   .pixs_out_valid               (pixs_out_valid),
+  .pixs_out_eol                 (pixs_out_eol),
   .pixs_out_eof                 (pixs_out_eof)
 );
   

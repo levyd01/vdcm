@@ -14,6 +14,7 @@ module slice_mux
   input wire [$clog2(MAX_SLICE_WIDTH)-1:0] slice_width,
   input wire [$clog2(MAX_SLICE_HEIGHT)-1:0] slice_height,
   input wire [15:0] frame_height,
+  input wire [3:0] eoc_valid_pixs,
   
   output wire [MAX_NBR_SLICES-1:0] fifo_almost_full,
   
@@ -22,6 +23,7 @@ module slice_mux
   input wire [MAX_NBR_SLICES-1:0] pixs_in_valid,
   
   output reg [4*3*14-1:0] pixs_out,
+  output reg [3:0] pixs_out_eol,
   output reg pixs_out_eof,
   output reg pixs_out_valid
 );
@@ -81,7 +83,6 @@ always @ (posedge clk_out_int or negedge rst_n)
   else if (rd_eoc[slices_per_line-1] & mem_rd_en[slices_per_line-1])
     line_cnt_until_eof <= line_cnt_until_eof + 1'b1;
     
-
 always @ (posedge clk_out_int or negedge rst_n)
   if (~rst_n)
     eof_rd <= 1'b0;
@@ -175,9 +176,61 @@ always @ (posedge clk_out_int or negedge rst_n) begin
   mem_rd_sel_dl[1] <= mem_rd_sel_dl[0];
 end
 
+reg lastBlockOfLine;
+always @ (posedge clk_out_int or negedge rst_n)
+  if (~rst_n)
+    lastBlockOfLine <= 1'b0;
+  else if (mem_rd_sof[0])
+    lastBlockOfLine <= 1'b0;
+  else if ((rd_pix4_cnt[slices_per_line-1] >= (slice_width>>2) - 2'd2) & mem_rd_en[slices_per_line-1])
+    lastBlockOfLine <= 1'b1;
+  else if (|mem_rd_en)
+    lastBlockOfLine <= 1'b0;
+    
+reg lastBlockOfLine_dl;
+always @ (posedge clk_out_int)
+  lastBlockOfLine_dl <= lastBlockOfLine;
+wire lastBlockOfLine_pulse;
+assign lastBlockOfLine_pulse = lastBlockOfLine & ~lastBlockOfLine_dl;
+
+reg firstPartOflastBlockOfLine;
+always @ (posedge clk_out_int or negedge rst_n)
+  if (~rst_n)
+    firstPartOflastBlockOfLine <= 1'b0;
+  else if (mem_rd_sof[0])
+    firstPartOflastBlockOfLine <= 1'b0;
+  else if ((rd_pix4_cnt[slices_per_line-1] == (slice_width>>2) - 2'd2) & mem_rd_en[slices_per_line-1])
+    firstPartOflastBlockOfLine <= 1'b1;
+  else if (|mem_rd_en)
+    firstPartOflastBlockOfLine <= 1'b0;
+wire secondPartOflastBlockOfLine;
+assign secondPartOflastBlockOfLine = lastBlockOfLine & ~firstPartOflastBlockOfLine;
+  
+always @ (posedge clk_out_int or negedge rst_n)
+  if (~rst_n)
+    pixs_out_eol <= 4'b0;
+  else if (mem_rd_sof[0])
+    pixs_out_eol <= 4'b0;
+  else if ((eoc_valid_pixs <= 4'd4) & lastBlockOfLine_pulse) // last pixel is in first part of the last block
+    case (eoc_valid_pixs)
+      4'd1: pixs_out_eol <= 4'b0001;
+      4'd2: pixs_out_eol <= 4'b0010;
+      4'd3: pixs_out_eol <= 4'b0100;
+      4'd4: pixs_out_eol <= 4'b1000;
+    endcase
+  else if ((eoc_valid_pixs >= 4'd5) & rd_eoc[slices_per_line-1] & mem_rd_en[slices_per_line-1]) // last pixel is in second part of the last block
+    case (eoc_valid_pixs)
+      4'd5: pixs_out_eol <= 4'b0001;
+      4'd6: pixs_out_eol <= 4'b0010;
+      4'd7: pixs_out_eol <= 4'b0100;
+      4'd8: pixs_out_eol <= 4'b1000;
+    endcase
+  else if (|mem_rd_en)
+    pixs_out_eol <= 4'b0;
+
 always @ (posedge clk_out_int) begin
   pixs_out <= mem_rd_data[mem_rd_sel_dl[0]];
-  pixs_out_valid <= mem_rd_valid[mem_rd_sel_dl[0]];
+  pixs_out_valid <= mem_rd_valid[mem_rd_sel_dl[0]] & ~(secondPartOflastBlockOfLine & (eoc_valid_pixs <= 4'd4)); // disable valid when the last pixel of the line is in the first part of the block
   pixs_out_eof <= eof_rd;
 end
 

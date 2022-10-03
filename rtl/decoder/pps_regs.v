@@ -60,6 +60,7 @@ module pps_regs
   output reg [15:0] num_extra_mux_bits,
   output reg [9:0] slices_per_line,
   output reg [2:0] slice_pad_x,
+  output reg [3:0] eoc_valid_pixs,
   output reg [3:0] mpp_min_step_size,
   
   output reg [$clog2(MAX_SLICE_WIDTH)-1:0] origSliceWidth,
@@ -122,12 +123,16 @@ wire [15:0] slice_height_a;
 assign slice_height_a = {in_data_gated[10*8+:8], in_data_gated[11*8+:8]};
 wire [31:0] slice_num_px_a;
 assign slice_num_px_a = {in_data_gated[12*8+:8], in_data_gated[13*8+:8], in_data_gated[14*8+:8], in_data_gated[15*8+:8]};
+wire [15:0] frameWidthRoundedUp;
+assign frameWidthRoundedUp = (|frame_width[2:0]) ? (frame_width & 16'hfff8) + 4'd8 : frame_width;
 reg [7:0] flatness_qp_lut [7:0];
 reg [7:0] max_qp_lut [7:0];
 reg [7:0] target_rate_delta_lut [15:0];
 integer i;
 wire [39:0] slice_num_bits_a;
 assign slice_num_bits_a = {in_data_gated[27*8+:8], in_data_gated[28*8+:8], in_data_gated[29*8+:8], in_data_gated[30*8+:8], in_data_gated[31*8+:8]};
+wire [3:0] slices_per_line_1_1_a; // only support slices_per_line = 2^n, limited to 8
+assign slices_per_line_1_1_a = {6'b0, (frameWidthRoundedUp>>3) == slice_width, (frameWidthRoundedUp>>2) == slice_width, (frameWidthRoundedUp>>1) == slice_width, frameWidthRoundedUp == slice_width};
 wire [$clog2(MAX_SLICE_WIDTH)-3-1:0] numBlocksInLine;
 reg [$clog2(MAX_SLICE_WIDTH)-3+16-1:0] blocksInLine_mult_rcFullnessOffsetThreshold;
 reg [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-4-1:0] numBlocksInSlice;
@@ -188,11 +193,19 @@ always @ (posedge clk)
         begin
           chunk_adj_bits <= in_data_gated[1*8+:4];
           num_extra_mux_bits <= {in_data_gated[2*8+:8], in_data_gated[3*8+:8]};
-          if (version_minor == 2'd2)
+          if (version_minor == 2'd2) begin
             slices_per_line <= {in_data_gated[4*8+:2], in_data_gated[5*8+:8]};
-          else // only support slices_per_line = 2^n, limited to 8
-            slices_per_line <= {6'b0, (frame_width>>3) == slice_width, (frame_width>>2) == slice_width, (frame_width>>1) == slice_width, frame_width == slice_width};
-          slice_pad_x <= in_data_gated[6*8+:3];
+            slice_pad_x <= in_data_gated[6*8+:3];
+          end
+          else begin // Only support 1, 2, 4 and 8 slices per line in v1.1
+            slices_per_line <= slices_per_line_1_1_a;
+            case (slices_per_line_1_1_a)
+              4'd1: slice_pad_x <= 4'd8 - (frame_width      & 3'b111);
+              4'd2: slice_pad_x <= 4'd8 - ((frame_width>>1) & 3'b111);
+              4'd4: slice_pad_x <= 4'd8 - ((frame_width>>2) & 3'b111);
+              4'd4: slice_pad_x <= 4'd8 - ((frame_width>>3) & 3'b111);
+            endcase
+          end
           mpp_min_step_size <= in_data_gated[7*8+:4];
         end
     endcase
@@ -258,6 +271,7 @@ assign numBlocksInLine = slice_width >> 3;
 always @ (posedge clk)
   if (data_in_is_pps_dl[0] & ~data_in_is_pps) begin
     origSliceWidth <= slice_width - slice_pad_x;
+    eoc_valid_pixs <= 4'd8 - slice_pad_x;
     b0 <= (slice_height * chunk_size) << 3; // B0 in spec section 4.5.2
     rcOffsetInit <= rc_init_tx_delay * bits_per_pixel;
     maxAdjBits <= (chunk_adj_bits + 1'b1) >> 1;
