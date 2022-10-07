@@ -280,7 +280,7 @@ reg [5:0] rd_data_fullness;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n) 
     rd_data_fullness <= 6'd32;
-  else if (in_sof | (slices_per_line == 10'd1))
+  else if ((early_eos & ~eof) | (slices_per_line == 10'd1))
       rd_data_fullness <= 6'd32;
   else if (rd_en)
     if ((byte_cnt + 7'd64 >= chunk_size) & (rd_data_fullness == 6'd32))
@@ -317,7 +317,35 @@ always @ (posedge clk)
     case (rd_data_fullness_dl)
       6'd1  : commonByteBuffer <= {commonByteBuffer[1024 - 1* 8-1:0], rd_data[31*8+:   8]};
       6'd2  : commonByteBuffer <= {commonByteBuffer[1024 - 2* 8-1:0], rd_data[30*8+: 2*8]};
+      6'd3  : commonByteBuffer <= {commonByteBuffer[1024 - 3* 8-1:0], rd_data[29*8+: 3*8]};
+      6'd4  : commonByteBuffer <= {commonByteBuffer[1024 - 4* 8-1:0], rd_data[28*8+: 4*8]};
+      6'd5  : commonByteBuffer <= {commonByteBuffer[1024 - 5* 8-1:0], rd_data[27*8+: 5*8]};
+      6'd6  : commonByteBuffer <= {commonByteBuffer[1024 - 6* 8-1:0], rd_data[26*8+: 6*8]};
+      6'd7  : commonByteBuffer <= {commonByteBuffer[1024 - 7* 8-1:0], rd_data[25*8+: 7*8]};
+      6'd8  : commonByteBuffer <= {commonByteBuffer[1024 - 8* 8-1:0], rd_data[24*8+: 8*8]};
+      6'd9  : commonByteBuffer <= {commonByteBuffer[1024 - 9* 8-1:0], rd_data[23*8+: 9*8]};
+      6'd10 : commonByteBuffer <= {commonByteBuffer[1024 -10* 8-1:0], rd_data[22*8+:10*8]};
+      6'd11 : commonByteBuffer <= {commonByteBuffer[1024 -11* 8-1:0], rd_data[21*8+:11*8]};
+      6'd12 : commonByteBuffer <= {commonByteBuffer[1024 -12* 8-1:0], rd_data[20*8+:12*8]};
+      6'd13 : commonByteBuffer <= {commonByteBuffer[1024 -13* 8-1:0], rd_data[19*8+:13*8]};
+      6'd14 : commonByteBuffer <= {commonByteBuffer[1024 -14* 8-1:0], rd_data[18*8+:14*8]};
+      6'd15 : commonByteBuffer <= {commonByteBuffer[1024 -15* 8-1:0], rd_data[17*8+:15*8]};
       6'd16 : commonByteBuffer <= {commonByteBuffer[1024 -16* 8-1:0], rd_data[16*8+:16*8]};
+      6'd17 : commonByteBuffer <= {commonByteBuffer[1024 -17* 8-1:0], rd_data[15*8+:17*8]};
+      6'd18 : commonByteBuffer <= {commonByteBuffer[1024 -18* 8-1:0], rd_data[14*8+:18*8]};
+      6'd19 : commonByteBuffer <= {commonByteBuffer[1024 -19* 8-1:0], rd_data[13*8+:19*8]};
+      6'd20 : commonByteBuffer <= {commonByteBuffer[1024 -20* 8-1:0], rd_data[12*8+:20*8]};
+      6'd21 : commonByteBuffer <= {commonByteBuffer[1024 -21* 8-1:0], rd_data[11*8+:21*8]};
+      6'd22 : commonByteBuffer <= {commonByteBuffer[1024 -22* 8-1:0], rd_data[10*8+:22*8]};
+      6'd23 : commonByteBuffer <= {commonByteBuffer[1024 -23* 8-1:0], rd_data[ 9*8+:23*8]};
+      6'd24 : commonByteBuffer <= {commonByteBuffer[1024 -24* 8-1:0], rd_data[ 8*8+:24*8]};
+      6'd25 : commonByteBuffer <= {commonByteBuffer[1024 -25* 8-1:0], rd_data[ 7*8+:25*8]};
+      6'd26 : commonByteBuffer <= {commonByteBuffer[1024 -26* 8-1:0], rd_data[ 6*8+:26*8]};
+      6'd27 : commonByteBuffer <= {commonByteBuffer[1024 -27* 8-1:0], rd_data[ 5*8+:27*8]};
+      6'd28 : commonByteBuffer <= {commonByteBuffer[1024 -28* 8-1:0], rd_data[ 4*8+:28*8]};
+      6'd29 : commonByteBuffer <= {commonByteBuffer[1024 -29* 8-1:0], rd_data[ 3*8+:29*8]};
+      6'd30 : commonByteBuffer <= {commonByteBuffer[1024 -30* 8-1:0], rd_data[ 2*8+:30*8]};
+      6'd31 : commonByteBuffer <= {commonByteBuffer[1024 -31* 8-1:0], rd_data[ 1*8+:31*8]};
       6'd32 : commonByteBuffer <= {commonByteBuffer[767:0], rd_data};
     endcase
     

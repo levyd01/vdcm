@@ -153,9 +153,9 @@ reg [1:0] clk_cnt;
 reg parse_substreams_i;
 always @ (*)
   if (isFirstParse)
-    parse_substreams_i = ~stall_pull & (clk_cnt == 2'd2) & fs_ready[0] & (sos_fsm == SOS_FSM_PARSE_SSM0);
+    parse_substreams_i = ~stall_pull & (clk_cnt == 2'd2) & fs_ready[0] & (sos_fsm >= SOS_FSM_PARSE_SSM0);
   else
-    parse_substreams_i = ~stall_pull & (clk_cnt == 2'd2) & (isLastBlock ? (|fs_ready[3:1]) : (&fs_ready));
+    parse_substreams_i = ~stall_pull & (clk_cnt == 2'd2) & (isLastBlock | (&fs_ready));
 
 reg [4:0] parse_substreams_i_dl;
 always @ (posedge clk or negedge rst_n)
@@ -996,7 +996,7 @@ always @ (posedge clk or negedge rst_n)
     for (c = 0; c < 3; c = c + 1)
       if (substream_parsed[c])
         substream_parsed[c] <= 1'b0;
-      else if (fs_ready[c+1] & (clk_cnt == 2'd2) & parse_substreams)
+      else if ((fs_ready[c+1] | isLastBlock) & (clk_cnt == 2'd2) & parse_substreams)
         substream_parsed[c] <= 1'b1;
     
 always @ (posedge clk or negedge rst_n)

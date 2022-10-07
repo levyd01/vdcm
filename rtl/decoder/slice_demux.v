@@ -27,6 +27,18 @@ wire one_slice_active;
 assign one_slice_active = (slices_per_line == 10'd1);
 
 reg [15:0] byte_cnt;
+wire last_word_of_chunk;
+assign last_word_of_chunk = (byte_cnt + 6'd32 > chunk_size);
+
+reg first_word_of_chunk_i;
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    first_word_of_chunk_i <= 1'b1;
+  else if (in_valid)
+    first_word_of_chunk_i <= last_word_of_chunk;
+wire first_word_of_chunk;
+assign first_word_of_chunk = in_sof | first_word_of_chunk_i;
+
 wire [5:0] remainder;
 reg [5:0] remainder_r;
 reg [4:0] byte_offset;
@@ -40,7 +52,7 @@ always @ (posedge clk or negedge rst_n)
       byte_cnt <= 16'd32;
       remainder_r <= 6'd0;
     end
-    else if (byte_cnt + 6'd32 > chunk_size) begin
+    else if (last_word_of_chunk) begin
       remainder_r <= (byte_cnt + 6'd32) - chunk_size;
       if (((byte_offset + remainder) & 5'h1f) != 5'd0)
         byte_cnt <= 16'd0;
@@ -50,7 +62,7 @@ always @ (posedge clk or negedge rst_n)
     else
       byte_cnt <= byte_cnt + 6'd32;
       
-assign remainder = (byte_cnt + 6'd32 > chunk_size) ? ((byte_cnt + 6'd32) - chunk_size) : remainder_r;
+assign remainder = last_word_of_chunk ? ((byte_cnt + 6'd32) - chunk_size) : remainder_r;
 
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
@@ -58,7 +70,7 @@ always @ (posedge clk or negedge rst_n)
   else if (in_valid) 
     if (in_sof)
       byte_offset <= 5'd0;
-    else if ((byte_cnt + 6'd32 > chunk_size) & ~one_slice_active)
+    else if (last_word_of_chunk & ~one_slice_active)
       byte_offset <= byte_offset + remainder;
       
 integer i;
@@ -74,8 +86,11 @@ always @ (posedge clk or negedge rst_n)
   else if (in_sof)
     active_fifo <= {$clog2(MAX_NBR_SLICES){1'b0}};
   else if (~one_slice_active) begin
-    if (in_valid & (byte_cnt + 6'd32 > chunk_size))
-      active_fifo <= active_fifo + 1'b1;
+    if (in_valid & last_word_of_chunk)
+      if (active_fifo+1 == slices_per_line)
+        active_fifo <= {$clog2(MAX_NBR_SLICES){1'b0}};
+      else
+        active_fifo <= active_fifo + 1'b1;
   end
   else
     active_fifo <= {$clog2(MAX_NBR_SLICES){1'b0}};
@@ -89,7 +104,7 @@ always @ (posedge clk or negedge rst_n)
   else if (in_valid) begin
     out_valid[active_fifo] <= 1'b1;
     if (~one_slice_active) begin
-      if ((byte_cnt + 6'd32 > chunk_size) & (((byte_offset + remainder) & 5'h1f) == 5'd0)) begin
+      if (last_word_of_chunk & (((byte_offset + remainder) & 5'h1f) == 5'd0)) begin
         if (active_fifo+1 == slices_per_line) begin
           out_data[0] <= in_data;
           out_valid[0] <= 1'b1;
@@ -103,9 +118,8 @@ always @ (posedge clk or negedge rst_n)
         out_data[active_fifo] <= in_data;
       else
         for (i = 0; i<32 ;i=i+1)
-          if (i<byte_offset) begin
-            out_data[active_fifo][i*8+:8] <= tmp_buf[(i+byte_offset)*8+:8];
-          end
+          if (i<byte_offset)
+            out_data[active_fifo][i*8+:8] <= tmp_buf[(i+32-byte_offset)*8+:8];
           else
             out_data[active_fifo][i*8+:8] <= in_data[(i-byte_offset)*8+:8];
     end

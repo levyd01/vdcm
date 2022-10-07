@@ -90,8 +90,6 @@ always @ (posedge clk_out_int or negedge rst_n)
   else if (rd_eoc[slices_per_line-1] & (line_cnt_until_eof >= frame_height - 1'b1) & mem_rd_en[slices_per_line-1])
     eof_rd <= 1'b1;
 
-wire [MAX_NBR_SLICES-1:0] wr_eoc;
-
 parameter ADDR_WIDTH = $clog2(((MAX_SLICE_WIDTH>>2))+4);
 
 reg [$clog2(MAX_NBR_SLICES)-1:0] mem_rd_sel_dl [1:0];
@@ -109,12 +107,6 @@ wire [MAX_NBR_SLICES-1:0] mem_rd_valid;
 reg [ADDR_WIDTH-1:0] rd_pix4_cnt [MAX_NBR_SLICES-1:0];
 reg [ADDR_WIDTH-1:0] wr_pix4_cnt [MAX_NBR_SLICES-1:0];
 wire [MAX_NBR_SLICES-1:0] mem_empty;
-reg [MAX_NBR_SLICES-1:0] lastBlockOfChunk;
-reg [MAX_NBR_SLICES-1:0] lastBlockOfChunk_dl;
-wire [MAX_NBR_SLICES-1:0] lastBlockOfChunk_pulse;
-reg [MAX_NBR_SLICES-1:0] firstPartOfLastBlockOfChunk;
-wire [MAX_NBR_SLICES-1:0] secondPartOfLastBlockOfChunk;
-reg [MAX_NBR_SLICES-1:0] pixs_out_eoc;
 
 generate
   for (gs = 0; gs < MAX_NBR_SLICES; gs = gs + 1) begin  : gen_fifos
@@ -129,8 +121,6 @@ generate
           wr_pix4_cnt[gs] <= {ADDR_WIDTH{1'b0}};
         else
           wr_pix4_cnt[gs] <= wr_pix4_cnt[gs] + 1'b1;
-          
-    assign wr_eoc[gs] = wr_pix4_cnt[gs] == (slice_width>>2) - 1'b1;
     
     always @ (posedge clk_out_int or negedge rst_n)
       if (~rst_n)
@@ -180,59 +170,61 @@ generate
         
       );  
       
-    
-    always @ (posedge clk_out_int or negedge rst_n)
-      if (~rst_n)
-        lastBlockOfChunk[gs] <= 1'b0;
-      else if (mem_rd_sof[0])
-        lastBlockOfChunk[gs] <= 1'b0;
-      else if ((rd_pix4_cnt[gs] >= (slice_width>>2) - 2'd2) & mem_rd_valid[gs])
-        lastBlockOfChunk[gs] <= 1'b1;
-      else if (mem_rd_valid[mem_rd_sel])
-        lastBlockOfChunk[gs] <= 1'b0;  
-        
-    
-    always @ (posedge clk_out_int)
-      lastBlockOfChunk_dl[gs] <= lastBlockOfChunk[gs];
-    
-    assign lastBlockOfChunk_pulse[gs] = lastBlockOfChunk[gs] & ~lastBlockOfChunk_dl[gs];
-    
-    
-    always @ (posedge clk_out_int or negedge rst_n)
-      if (~rst_n)
-        firstPartOfLastBlockOfChunk[gs] <= 1'b0;
-      else if (mem_rd_sof[gs])
-        firstPartOfLastBlockOfChunk[gs] <= 1'b0;
-      else if ((rd_pix4_cnt[gs] == (slice_width>>2) - 2'd2) & mem_rd_valid[gs])
-        firstPartOfLastBlockOfChunk[gs] <= 1'b1;
-      else if (mem_rd_valid[gs])
-        firstPartOfLastBlockOfChunk[gs] <= 1'b0;
-    
-    assign secondPartOfLastBlockOfChunk[gs] = lastBlockOfChunk[gs] & ~firstPartOfLastBlockOfChunk[gs];
-    
   end
 endgenerate
+
+reg lastBlockOfChunk;
+reg lastBlockOfChunk_dl;
+reg firstPartOfLastBlockOfChunk;
+wire secondPartOfLastBlockOfChunk;
+
+always @ (posedge clk_out_int or negedge rst_n)
+  if (~rst_n)
+    lastBlockOfChunk <= 1'b0;
+  else if (mem_rd_sof[0])
+    lastBlockOfChunk <= 1'b0;
+  else if ((rd_pix4_cnt[mem_rd_sel_dl[0]] >= (slice_width>>2) - 2'd2) & mem_rd_valid[mem_rd_sel_dl[0]])
+    lastBlockOfChunk <= 1'b1;
+  else if (mem_rd_valid[mem_rd_sel_dl[0]])
+    lastBlockOfChunk <= 1'b0;  
+    
+
+always @ (posedge clk_out_int)
+  lastBlockOfChunk_dl <= lastBlockOfChunk;
+
+always @ (posedge clk_out_int or negedge rst_n)
+  if (~rst_n)
+    firstPartOfLastBlockOfChunk <= 1'b0;
+  else if (mem_rd_sof[0])
+    firstPartOfLastBlockOfChunk <= 1'b0;
+  else if ((rd_pix4_cnt[mem_rd_sel_dl[0]] == (slice_width>>2) - 2'd2) & mem_rd_valid[mem_rd_sel_dl[0]])
+    firstPartOfLastBlockOfChunk <= 1'b1;
+  else if (mem_rd_valid[mem_rd_sel_dl[0]])
+    firstPartOfLastBlockOfChunk <= 1'b0;
+
+assign secondPartOfLastBlockOfChunk = lastBlockOfChunk & ~firstPartOfLastBlockOfChunk;
+
 
 always @ (posedge clk_out_int or negedge rst_n)
   if (~rst_n)
     pixs_out_valid <= 4'b0;
   else if (mem_rd_sof[0])
     pixs_out_valid <= 4'b0;
-  else if ((eoc_valid_pixs <= 4'd4) & firstPartOfLastBlockOfChunk[mem_rd_sel_dl[0]] & mem_rd_valid[mem_rd_sel_dl[0]]) // last pixel is in first part of the last block
+  else if ((eoc_valid_pixs <= 4'd4) & firstPartOfLastBlockOfChunk & mem_rd_valid[mem_rd_sel_dl[0]]) // last pixel is in first part of the last block
     case (eoc_valid_pixs)
       4'd1: pixs_out_valid <= 4'b0001;
       4'd2: pixs_out_valid <= 4'b0011;
       4'd3: pixs_out_valid <= 4'b0111;
       4'd4: pixs_out_valid <= 4'b1111;
     endcase
-  else if ((eoc_valid_pixs >= 4'd5) & secondPartOfLastBlockOfChunk[mem_rd_sel_dl[0]] & mem_rd_valid[mem_rd_sel_dl[0]]) // last pixel is in second part of the last block
+  else if ((eoc_valid_pixs >= 4'd5) & secondPartOfLastBlockOfChunk & mem_rd_valid[mem_rd_sel_dl[0]]) // last pixel is in second part of the last block
     case (eoc_valid_pixs)
       4'd5: pixs_out_valid <= 4'b0001;
       4'd6: pixs_out_valid <= 4'b0011;
       4'd7: pixs_out_valid <= 4'b0111;
       4'd8: pixs_out_valid <= 4'b1111;
     endcase
-  else if (mem_rd_valid[mem_rd_sel_dl[0]] & ~(secondPartOfLastBlockOfChunk[mem_rd_sel_dl[0]] & (eoc_valid_pixs <= 4'd4))) // disable valid when the last pixel of the chunk is in the first part of the block
+  else if (mem_rd_valid[mem_rd_sel_dl[0]] & ~(secondPartOfLastBlockOfChunk & (eoc_valid_pixs <= 4'd4))) // disable valid when the last pixel of the chunk is in the first part of the block
     pixs_out_valid <= 4'b1111;
   else
     pixs_out_valid <= 4'b0;
