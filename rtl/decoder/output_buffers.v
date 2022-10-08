@@ -74,7 +74,7 @@ always @ (posedge clk)
   else if (isSliceWidthDivBy8)
     er_num_lines <= slice_width>>3;
   else
-    er_num_lines <= first_half_of_slice_wr? (slice_width>>3) + 1'b1 : (slice_width>>3) - 1'b1;
+    er_num_lines <= first_half_of_slice_wr ? (slice_width>>3) + 1'b1 : (slice_width>>3) - 1'b1;
 
 reg [ER_ADDR_WIDTH-1:0] er_addr_wr;
 always @ (posedge clk)
@@ -272,6 +272,17 @@ odd_row_buf
   .rd_data      (or_rd_data_p),
   .mem_valid    (or_data_valid)
 );
+
+wire [13:0] or_wr_data [3:0][2:0];
+wire [13:0] or_rd_data [3:0][2:0];
+generate
+  for (gc=0; gc<4; gc=gc+1) begin : gen_or_wr_data_gc
+    for (cpi=0; cpi<3; cpi=cpi+1) begin : gen_or_wr_data_cpi
+      assign or_wr_data[gc][cpi] = or_wr_data_p[(gc*3+cpi)*14+:14];
+      assign or_rd_data[gc][cpi] = or_rd_data_p[(gc*3+cpi)*14+:14];
+    end
+  end
+endgenerate
       
 reg [13:0] out_data [2:0][3:0];
 always @ (posedge clk) begin

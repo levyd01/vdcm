@@ -210,7 +210,7 @@ always @ (posedge clk)
               4'd1: slice_pad_x <= 4'd8 - (frame_width      & 3'b111);
               4'd2: slice_pad_x <= 4'd8 - ((frame_width>>1) & 3'b111);
               4'd4: slice_pad_x <= 4'd8 - ((frame_width>>2) & 3'b111);
-              4'd4: slice_pad_x <= 4'd8 - ((frame_width>>3) & 3'b111);
+              4'd8: slice_pad_x <= 4'd8 - ((frame_width>>3) & 3'b111);
             endcase
           end
           mpp_min_step_size <= in_data_gated[7*8+:4];

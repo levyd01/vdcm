@@ -10,7 +10,7 @@ module tb_decoder
 parameter MAX_SLICE_WIDTH     = 2560;
 parameter MAX_SLICE_HEIGHT    = 2560;
 parameter MAX_BPC = 8;
-parameter MAX_NBR_SLICES = 4;
+parameter MAX_NBR_SLICES = 8;
 
 real AVG_PIXEL_RATE = 1.2*(10**6); // pixels per second
 real SPEED_FACTOR = 1.2; // Factor mutiplying the minimum required rate of the internal DSC clock.

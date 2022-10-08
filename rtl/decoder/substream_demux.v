@@ -229,6 +229,7 @@ always @ (posedge clk or negedge rst_n)
   else if ((sos_fsm == SOS_FSM_FETCH_SSM0) | (sos_fsm == SOS_FSM_PARSE_SSM0))
     fsm_cnt <= fsm_cnt + 1'b1;  
   
+reg [3:0] mux_word_valid;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     sos_fsm <= SOS_FSM_IDLE;
@@ -237,7 +238,7 @@ always @ (posedge clk or negedge rst_n)
   else
     case (sos_fsm)
       SOS_FSM_IDLE      : if (start_decode) sos_fsm <= SOS_FSM_FETCH_SSM0;
-      SOS_FSM_FETCH_SSM0: if (fsm_cnt == 2'd3) sos_fsm <= SOS_FSM_PARSE_SSM0;
+      SOS_FSM_FETCH_SSM0: if /*(fsm_cnt == 2'd3)*/(mux_word_valid[0]) sos_fsm <= SOS_FSM_PARSE_SSM0;
       SOS_FSM_PARSE_SSM0: if (fsm_cnt == 2'd3) sos_fsm <= SOS_FSM_RUNTIME;
       SOS_FSM_RUNTIME   : if (early_eos) sos_fsm <= SOS_FSM_IDLE;
     endcase
@@ -252,7 +253,6 @@ always @ (posedge clk)
   sos_fsm_dl <= sos_fsm;
 assign sos_for_rc = (sos_fsm_dl == SOS_FSM_PARSE_SSM0) & (sos_fsm == SOS_FSM_RUNTIME);
 
-reg [3:0] mux_word_valid;
 reg [3:0] num_mux_word_valid;
 always @ (*)
   case (mux_word_valid)
@@ -408,7 +408,7 @@ always @ (posedge clk or negedge rst_n)
     start_decode_dl <= 4'b0;
   else
     start_decode_dl <= {start_decode_dl[2:0], start_decode};
-assign ssm_sof = start_decode | (|start_decode_dl[2:0]);// | eos;
+assign ssm_sof = start_decode | (|start_decode_dl[2:0]);
 wire ssm_sof_pulse;
 assign ssm_sof_pulse = start_decode_dl[3];
 

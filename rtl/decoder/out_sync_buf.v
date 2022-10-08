@@ -3,7 +3,8 @@ module out_sync_buf
 #(
   parameter NUMBER_OF_LINES = 4,
   parameter DATA_WIDTH = 4*3*14,
-  parameter MAX_SLICE_WIDTH        = 2560
+  parameter MAX_SLICE_WIDTH        = 2560,
+  parameter ID = 0
 )
 (
   input wire clk_rd,
@@ -28,7 +29,7 @@ module out_sync_buf
 parameter ADDR_WIDTH = $clog2(NUMBER_OF_LINES) + 1; // Additional bit to differentiate between empty and full
 
 wire [ADDR_WIDTH-1:0] fifo_size;
-assign fifo_size = slice_width >> 1;
+assign fifo_size = (slice_width < 9'd256) ? 8'd128 : (slice_width >> 1);
 
 function [ADDR_WIDTH-1:0] bin2gray;
   input [ADDR_WIDTH-1:0] bin_in;
@@ -91,9 +92,17 @@ always @ (posedge clk_rd)
   
 reg [ADDR_WIDTH-1:0] addr_r;
 assign empty = (addr_w_rd_clk_domain == addr_r);
+
+/* For debug only. Should never occur: 
 wire full;
 assign full = (addr_w_rd_clk_domain[ADDR_WIDTH-2:0] == addr_r[ADDR_WIDTH-2:0]) & (addr_w_rd_clk_domain[ADDR_WIDTH-1] ^ addr_r[ADDR_WIDTH-1]);
 
+always @ (full)
+  if (full) begin
+    $display ("FIFO %0d is full", ID);
+    $stop;
+  end
+*/
 
 wire rd_en;
 assign rd_en = out_rd_en;

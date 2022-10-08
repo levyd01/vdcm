@@ -150,7 +150,8 @@ generate
     out_sync_buf 
       #(
         .NUMBER_OF_LINES          (MAX_SLICE_WIDTH>>1),
-        .DATA_WIDTH               (4*3*14)
+        .DATA_WIDTH               (4*3*14),
+        .ID                       (gs)
       )
       output_sync_buf_u
       (
