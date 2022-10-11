@@ -308,7 +308,7 @@ always @ (posedge clk or negedge rst_n)
 reg [2:0] masterQpOffset;
 always @ (*)
   if (chroma_format == 2'd0)
-    masterQpOffset = fbls ? 3'd4 : 3'd2;
+    masterQpOffset = fbls_dl ? 3'd4 : 3'd2;
   else
     masterQpOffset = 3'd0;
 
@@ -341,7 +341,7 @@ function integer GetPartitionStartOffset;
   end
 endfunction
 
-function signed [13:0] DequantSample;
+function signed [14:0] DequantSample;
   input reg signed [15:0] quant;
   input reg [7:0] scale;
   input reg [7:0] offset;
@@ -349,12 +349,14 @@ function signed [13:0] DequantSample;
   reg sign;
   reg [14:0] absQuant;
   reg [15:0] iCoeffQClip_pos;
+  reg [23:0] iCoeffQClip_pos_before_shift;
   reg [6:0] absShift;
   begin
     sign = quant[15];
     if (shift > 8'sd0) begin
       absQuant = sign ? ~((quant - 1'b1)) : quant[15:0];
-      iCoeffQClip_pos = ((absQuant * scale) + offset) >> shift;
+      iCoeffQClip_pos_before_shift = (absQuant * scale) + offset;
+      iCoeffQClip_pos = iCoeffQClip_pos_before_shift >> shift;
       DequantSample = sign ? ~(iCoeffQClip_pos - 1'b1) : $signed({1'b0, iCoeffQClip_pos});
     end
     else begin
@@ -364,34 +366,6 @@ function signed [13:0] DequantSample;
   end
 endfunction
 
-// GetCurCompQpMod in C 
-reg [6:0] tempQp [2:0];
-always @ (*)
-  for (c=0; c<3; c=c+1)
-    case (csc)
-      2'd0: tempQp[c] = qp[c];
-      // TBD !!!!!!!!!! YCbCr
-      // TBD !!!!!!!!!! YCoCg
-      default: tempQp[c] = qp[c];
-    endcase
-wire [5:0] qpAdj; // = (bitDepth - 8) << 3
-assign qpAdj = (bits_per_component_coded << 1) << 3;
-reg [6:0] clampedTempQp [2:0];
-always @ (*)
-  for (c=0; c<3; c=c+1)
-    if (tempQp[c] < minQp)
-      clampedTempQp[c] = minQp;
-    else if (tempQp[c] > 7'd72)
-      clampedTempQp[c] = 7'd72;
-    else
-      clampedTempQp[c] = tempQp[c];
-reg [6:0] qpMod [2:0];
-always @ (posedge clk)
-  if (qp_valid) 
-    for (c=0; c<3; c=c+1)
-      qpMod[c] <= clampedTempQp[c] + qpAdj;
-    
-
 reg [7:0] scale [2:0];
 reg [3:0] qp_scale [2:0];
 reg [2:0] qp_rem [2:0];
@@ -399,8 +373,8 @@ reg signed [7:0] shift [2:0];
 reg [7:0] offset [2:0];
 always @ (*)
   for (c=0; c<3; c=c+1) begin
-    qp_scale[c] = qpMod[c] >> 3;
-    qp_rem[c] = qpMod[c] & 3'b111;
+    qp_scale[c] = qp[c] >> 3;
+    qp_rem[c] = qp[c] & 3'b111;
     scale[c] = bpInvQuantScales[qp_rem[c]];
     shift[c] = 4'd9 - qp_scale[c];
     if (shift[c] > 7'sd0)
@@ -434,7 +408,7 @@ always @ (*)
       x0_base[c][b] = GetPartitionStartOffset(b, c, bpvTable[b], partitionSize[c], blkWidth[c]);
 
 reg signed [13:0] pReconBlk [2:0][1:0][7:0];
-reg signed [13:0] iCoeffQClip [2:0][1:0][7:0];
+reg signed [14:0] iCoeffQClip [2:0][1:0][7:0];
 reg signed [13:0] predBlk [2:0][1:0][7:0];
 always @ (posedge clk) begin : process_pPredBlk
   if (substreams123_parsed_dl[0] & (blockMode_dl[0] == MODE_BP)) begin

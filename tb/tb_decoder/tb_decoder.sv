@@ -213,9 +213,11 @@ always @ (negedge clk_out_int)
       if (pixs_out_valid[c])
         for (cp=0; cp<3; cp=cp+1)
           if (CompBitWidth == 8)
-             $fwrite(output_image_file, "%c", pixs_out_unpacked[c][cp][7:0]);
-           else
-             $fwrite(output_image_file, "%s", {2'b0, pixs_out_unpacked[c][cp][13:0]});
+            $fwrite(output_image_file, "%c", pixs_out_unpacked[c][cp][7:0]);
+          else begin
+            $fwrite(output_image_file, "%c", {2'b0, pixs_out_unpacked[c][cp][13:8]});
+            $fwrite(output_image_file, "%c", pixs_out_unpacked[c][cp][7:0]);
+          end
 
 /////////////////////////
 // Validation

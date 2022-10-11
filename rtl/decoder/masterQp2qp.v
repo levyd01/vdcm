@@ -222,7 +222,7 @@ reg [6:0] modQp [2:0];
 always @ (*)
   for (c=0; c<3; c=c+1) begin
     too_big = (tempQp[c] > 7'd72);
-    too_small = (tempQp[c] < minQp);
+    too_small = ($signed({1'b0, tempQp[c]}) < minQp);
     case({too_big, ~(too_big|too_small), too_small})
       3'b100: modQp[c] = 7'd72 + qpAdj;
       3'b010: modQp[c] = tempQp[c] + qpAdj;

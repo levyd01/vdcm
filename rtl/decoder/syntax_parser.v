@@ -769,6 +769,9 @@ always @ (*) begin : proc_parser_123
                     5'd10: compEcgCoeff[c][s] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:10], 10);
                     5'd11: compEcgCoeff[c][s] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:11], 11);
                     5'd12: compEcgCoeff[c][s] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:12], 12);
+                    5'd13: compEcgCoeff[c][s] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:13], 13);
+                    5'd14: compEcgCoeff[c][s] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:14], 14);
+                    5'd15: compEcgCoeff[c][s] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:15], 15);
                     default: compEcgCoeff[c][s] = 16'sd0;
                   endcase
                   //$display("time: %0t, CPEC ECG (SM) compEcgCoeff[%0d][%0d] = %d", $realtime, c, s, compEcgCoeff[c][s]);
@@ -836,6 +839,9 @@ always @ (*) begin : proc_parser_123
                     5'd10: pos = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:10], 10);
                     5'd11: pos = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:11], 11);
                     5'd12: pos = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:12], 12);
+                    5'd13: pos = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:13], 13);
+                    5'd14: pos = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:14], 14);
+                    5'd15: pos = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:15], 15);
                     default: pos = 15'd0;
                   endcase
                   //$display("pos = %d", pos);
@@ -1053,11 +1059,14 @@ always @ (posedge clk)
   else
     blockBits_valid_dl <= blockBits_valid;
 
+reg [2:0] curBlockMode_rr;
 always @ (posedge clk)
-  if (sos & substream0_parsed)
-    prevBlockBitsWithoutPadding <= 14'd0;
-  else if (|substream_parsed) begin
-    if (enableUnderflowPrevention & ((curBlockMode_r == MODE_TRANSFORM) | (curBlockMode_r == MODE_BP)))
+  if (parse_substreams)
+    curBlockMode_rr <= curBlockMode_r;
+
+always @ (posedge clk)
+  if (|substream_parsed) begin
+    if (enableUnderflowPrevention & ((curBlockMode_rr == MODE_TRANSFORM) | (curBlockMode_rr == MODE_BP)))
       prevBlockBitsWithoutPadding <= blockBits - rcStuffingBitsX9; 
     else
       prevBlockBitsWithoutPadding <= blockBits;
@@ -1067,4 +1076,3 @@ assign prevBlockBitsWithoutPadding_valid = blockBits_valid_dl;
 assign mpp_ctrl_valid = parse_substreams;
 
 endmodule
-
