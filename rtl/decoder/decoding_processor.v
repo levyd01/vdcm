@@ -55,9 +55,9 @@ module decoding_processor
   input wire [$clog2(MAX_SLICE_WIDTH)-1:0] slice_width,
   input wire [3*2-1:0] partitionSize_p,
 
-  input wire [6:0] masterQp,
+  input wire signed [7:0] masterQp,
   input wire masterQp_valid,
-  input wire [5:0] minQp,
+  input wire [6:0] minQp,
   input wire [8:0] maxQp,
   input wire [1:0] blockCsc,
   input wire [3:0] blockStepSize,
@@ -90,7 +90,7 @@ masterQp2qp masterQp2qpForTransformMode_u
   .qp_valid                     (qp_valid)
 );
 
-wire [6:0] masterQpForBp;
+wire signed [7:0] masterQpForBp;
 wire [3*7-1:0] qpForBp_p;
 
 masterQp2qp masterQp2qpForBp_u

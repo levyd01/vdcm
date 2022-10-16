@@ -118,10 +118,11 @@ wire [3*5-1:0] neighborsAboveLenAdjusted_p;
 wire [3*5-1:0] compNumSamples_p;
 wire isSliceWidthMultipleOf16;
 wire [11:0] rcStuffingBitsX9;
-wire signed [5:0] minQp;
+wire signed [6:0] minQp;
 wire [3*2-1:0] partitionSize_p;
 wire [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-4-1:0] rcOffsetThreshold;
-wire [34:0] sliceNumDwords;
+wire [4:0] OffsetAtBeginOfSlice;
+wire [34:0] sliceSizeInRamInBytes;
 
 pps_regs 
 #(
@@ -199,7 +200,8 @@ pps_regs_u
   .minQp                          (minQp),
   .partitionSize_p                (partitionSize_p),
   .rcOffsetThreshold              (rcOffsetThreshold),
-  .sliceNumDwords                 (sliceNumDwords),
+  .OffsetAtBeginOfSlice           (OffsetAtBeginOfSlice),
+  .sliceSizeInRamInBytes          (sliceSizeInRamInBytes),
   
   .pps_valid                      (pps_valid)
 );
@@ -305,7 +307,8 @@ generate
       .flatness_qp_lut_p              (flatness_qp_lut_p),
       .partitionSize_p                (partitionSize_p),
       .rcOffsetThreshold              (rcOffsetThreshold),
-      .sliceNumDwords                 (sliceNumDwords),
+      .OffsetAtBeginOfSlice           (OffsetAtBeginOfSlice),
+      .sliceSizeInRamInBytes          (sliceSizeInRamInBytes),
       .source_color_space             (source_color_space),
       
       .in_data                        (slice_demux_data_p[s*256+:256]),

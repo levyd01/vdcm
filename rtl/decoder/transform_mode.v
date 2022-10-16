@@ -36,7 +36,7 @@ module transform_mode
   input wire [16*3*16-1:0] pQuant_p,
   input wire pQuant_valid,
   
-  input wire signed[3*7-1:0] qp_p,
+  input wire [3*7-1:0] qp_p,
   input wire qp_valid,
   
   output reg pReconBlk_valid,
@@ -262,7 +262,7 @@ always @ (*)
     meanValue[c] = ((csc == 2'd1) & (c > 0)) ? 12'd0 : midPoint;
     for (row = 0; row < blkHeight[c]; row = row + 1)
       for (col = 0; col < blkWidth[c]; col = col + 1)
-        predBlkFbls_d[c][row][col] = $signed({1'b0, meanValue[c]});
+        predBlkFbls_d[c][row][col] = $signed({2'b0, meanValue[c]});
   end
 
 
@@ -311,7 +311,7 @@ always @ (*)
       neighborsAboveForIntra[c][col] = neighborsAbove[c][col-4];
   end
 
-function signed [13:0] Filter3;
+function signed [14:0] Filter3;
   input signed [13:0] left;
   input signed [13:0] center;
   input signed [13:0] right;
@@ -321,7 +321,7 @@ function signed [13:0] Filter3;
 endfunction
 
 reg pDequant_valid;
-reg signed [13:0] predBlk [2:0][1:0][7:0];
+reg signed [14:0] predBlk [2:0][1:0][7:0];
 always @ (posedge clk) 
   for (c=0; c<3; c=c+1) begin
     if (pDequant_valid)
@@ -404,7 +404,6 @@ always @ (posedge clk)
                       predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
                     end         
                   end
-
                   else begin
                     predBlk[c][0][col] <= (neighborsAboveForIntra[c][4+col] + neighborsAboveForIntra[c][4+col+1] + $signed(2'b01)) >>> 1;
                     predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
@@ -419,12 +418,12 @@ always @ (posedge clk)
                 for (col = 0; col < 8; col = col + 1) begin
                   if (soc_dl)
                     if (col == 0) begin
-                      predBlk[c][0][col] <= ($signed({1'b0, meanValue[c]}) + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
-                      predBlk[c][1][col] <= Filter3($signed({1'b0, meanValue[c]}), $signed({1'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
+                      predBlk[c][0][col] <= ($signed({2'b0, meanValue[c]}) + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
+                      predBlk[c][1][col] <= Filter3($signed({1'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
                     end
                     else if (col == 1) begin
                       predBlk[c][0][col] <= (neighborsAboveForIntra[c][4+col-1] + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
-                      predBlk[c][1][col] <= Filter3($signed({1'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                      predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
                     end
                     else begin
                       predBlk[c][0][col] <= (neighborsAboveForIntra[c][4+col-1] + neighborsAboveForIntra[c][4+col] + $signed(2'b01)) >>> 1;
@@ -457,8 +456,32 @@ always @ (posedge clk)
             case (chroma_format)
               2'd0: // 4:4:4
                 for (col = 0; col < 8; col = col + 1) begin
-                  predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
-                  predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+4]);
+                  if (eoc_dl) begin // Pixel duplication at chunk boundary
+                    if (col < 4) begin  
+                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+4]);
+                    end
+                    else if (col == 4) begin
+                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+3]);
+                    end
+                    else if (col == 5) begin
+                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
+                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
+                    end
+                    else if (col == 6) begin
+                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
+                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
+                    end
+                    else if (col == 7) begin
+                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
+                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
+                    end
+                  end
+                  else begin
+                    predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                    predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+4]);
+                  end
                 end
               // 2'd1: // 4:2:2 TBD 
               // 2'd2: // 4:2:0 TBD

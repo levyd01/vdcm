@@ -76,11 +76,12 @@ module pps_regs
   output reg [12:0] maxPoint,
   output reg isSliceWidthMultipleOf16,
   output reg [11:0] rcStuffingBitsX9,
-  output reg signed [5:0] minQp,
+  output reg signed [6:0] minQp,
   output wire [3*2-1:0] partitionSize_p,
   output wire [3*14-1:0] minPoint_p,
   output reg [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-4-1:0] rcOffsetThreshold,
-  output reg [34:0] sliceNumDwords, // after rounding chunks up to the nearest number of bytes divisible by 32
+  output reg [4:0] OffsetAtBeginOfSlice,
+  output reg [34:0] sliceSizeInRamInBytes, // Bigger because each chunk occupies a full Dword (256 bits) which may contain garbage at the end of chunk. TBD: improve this.
   
   output reg pps_valid
 );
@@ -125,6 +126,7 @@ wire [31:0] slice_num_px_a;
 assign slice_num_px_a = {in_data_gated[12*8+:8], in_data_gated[13*8+:8], in_data_gated[14*8+:8], in_data_gated[15*8+:8]};
 wire [15:0] frameWidthRoundedUp;
 assign frameWidthRoundedUp = (|frame_width[2:0]) ? (frame_width & 16'hfff8) + 4'd8 : frame_width;
+
 reg [7:0] flatness_qp_lut [7:0];
 reg [7:0] max_qp_lut [7:0];
 reg [7:0] target_rate_delta_lut [15:0];
@@ -273,17 +275,33 @@ end
 wire [15:0] chunkSizeRoundedUp; // to the next value divisible by 32 (bytes)
 assign chunkSizeRoundedUp = (chunk_size[4:0] == 5'd0) ? chunk_size : (chunk_size[15:5] + 1'b1) << 5;
 
+
+wire [34:0] sliceSizeInBytes;
+assign sliceSizeInBytes = slice_height * chunk_size;
+wire [39:0] slicesPerLineSizeInBytes;
+assign slicesPerLineSizeInBytes = sliceSizeInBytes * slices_per_line;
+
+wire [5:0] lastWordOfSliceSizeFullnessInBytes_a;
+assign lastWordOfSliceSizeFullnessInBytes_a = (slicesPerLineSizeInBytes[4:0] == 5'd0) ? 6'd32 : slicesPerLineSizeInBytes[4:0];
+reg [5:0] lastWordOfSliceSizeFullnessInBytes;
+always @ (posedge clk)
+  if ((data_in_is_pps&in_valid) | flush)
+    OffsetAtBeginOfSlice <= 5'd0;
+  else
+    OffsetAtBeginOfSlice <= lastWordOfSliceSizeFullnessInBytes[4:0];
+    
 reg signed [13:0] minPoint [2:0];
 assign numBlocksInLine = slice_width >> 3;
 always @ (posedge clk)
   if (data_in_is_pps_dl[0] & ~data_in_is_pps) begin
     origSliceWidth <= slice_width - slice_pad_x;
     eoc_valid_pixs <= 4'd8 - slice_pad_x;
-    b0 <= (slice_height * chunk_size) << 3; // B0 in spec section 4.5.2
+    b0 <= sliceSizeInBytes << 3; // B0 in spec section 4.5.2
     rcOffsetInit <= rc_init_tx_delay * bits_per_pixel;
     maxAdjBits <= (chunk_adj_bits + 1'b1) >> 1;
     rcOffsetThreshold <= numBlocksInSlice - blocksInLine_mult_rcFullnessOffsetThreshold;
-    sliceNumDwords <= slice_height * (chunkSizeRoundedUp >> 5);
+    sliceSizeInRamInBytes = slice_height * ((slices_per_line == 10'd1) ? chunk_size : chunkSizeRoundedUp);
+    lastWordOfSliceSizeFullnessInBytes <= lastWordOfSliceSizeFullnessInBytes_a;
     case (bits_per_component_coded)
       2'd0: maxPoint <= (1'b1 << 8) - 1'b1;
       2'd1: maxPoint <= (1'b1 << 10) - 1'b1;
@@ -301,9 +319,9 @@ always @ (posedge clk)
     isSliceWidthMultipleOf16 <= ~(|slice_width[3:0]);
     rcStuffingBitsX9 <= 4'd9 * rc_stuffing_bits;
     case (bits_per_component_coded)
-      2'd0: minQp <= 6'sd16;
-      2'd1: minQp <= 6'sd0;
-      2'd2: if (~version_minor) minQp <= 6'sd0; else minQp <= -6'sd16;
+      2'd0: minQp <= 7'sd16;
+      2'd1: minQp <= 7'sd0;
+      2'd2: minQp <= -7'sd16;
     endcase
   end
     

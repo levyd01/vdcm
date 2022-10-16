@@ -4,7 +4,7 @@ module masterQp2qp
   input wire [1:0] csc, // 0: RGB, 1: YCoCg, 2: YCbCr
   input wire [1:0] version_minor,
   
-  input wire [6:0] masterQp,
+  input wire signed [7:0] masterQp,
   input wire masterQp_valid,
   
   output wire [3*7-1:0] qp_p,
@@ -190,21 +190,21 @@ assign qStepCg[55] = 7'd72;
 assign qStepCg[56] = 7'd72;
 
 integer c;
-reg [6:0] tempQp [2:0];
+reg signed [7:0] tempQp [2:0];
 always @ (*)
   for (c=0; c<3; c=c+1)
     case (csc)
       2'd0: tempQp[c] = masterQp;
       2'd2:
-        if (masterQp < 7'd16)
+        if (masterQp < 8'sd16)
           tempQp[c] = masterQp;
         else
-          tempQp[c] = ((c == 0) ? masterQp : qStepChroma[masterQp - 5'd16]);
+          tempQp[c] = ((c == 0) ? masterQp : qStepChroma[masterQp - 8'sd16]);
       2'd1:
-        if (masterQp < 7'd16)
-          tempQp[c] = ((c == 0) ? masterQp : (masterQp + 4'd8));
+        if (masterQp < 8'sd16)
+          tempQp[c] = ((c == 0) ? masterQp : (masterQp + 8'sd8));
         else
-          tempQp[c] = ((c == 0) ? masterQp : (c == 1) ? qStepCo[masterQp - 5'd16] : qStepCg[masterQp - 5'd16]);
+          tempQp[c] = ((c == 0) ? masterQp : (c == 1) ? $signed({1'b0, qStepCo[masterQp - 8'sd16]}) : $signed({1'b0, qStepCg[masterQp - 8'sd16]}));
     endcase
 
 reg [5:0] qpAdj;
@@ -213,20 +213,20 @@ always @ (*)
   case (bits_per_component_coded)
     2'd0: begin qpAdj = 6'd0;  minQp = 6'sd16;  end
     2'd1: begin qpAdj = 6'd16; minQp = 6'sd0;   end
-    2'd2: begin qpAdj = 6'd32; minQp = (version_minor == 2'd2) ? -6'sd16 : 6'sd0; end
+    2'd2: begin qpAdj = 6'd32; minQp = -6'sd16; end
   endcase
 
 reg too_big;
 reg too_small;
-reg [6:0] modQp [2:0];
+reg signed [7:0] modQp [2:0];
 always @ (*)
   for (c=0; c<3; c=c+1) begin
-    too_big = (tempQp[c] > 7'd72);
-    too_small = ($signed({1'b0, tempQp[c]}) < minQp);
+    too_big = (tempQp[c] > 8'sd72);
+    too_small = (tempQp[c] < minQp);
     case({too_big, ~(too_big|too_small), too_small})
-      3'b100: modQp[c] = 7'd72 + qpAdj;
-      3'b010: modQp[c] = tempQp[c] + qpAdj;
-      3'b001: modQp[c] = minQp + qpAdj;
+      3'b100: modQp[c] = $signed({1'b0, 8'd72 + qpAdj});
+      3'b010: modQp[c] = tempQp[c] + $signed({1'b0, qpAdj});
+      3'b001: modQp[c] = minQp + $signed({1'b0, qpAdj});
     endcase
   end
     
@@ -235,7 +235,7 @@ assign qp_valid = masterQp_valid;
 genvar gi;
 generate
   for (gi=0; gi<3; gi=gi+1)
-    assign qp_p[gi*7+:7] = modQp[gi];
+    assign qp_p[gi*7+:7] = modQp[gi][6:0];
 endgenerate
 
 endmodule

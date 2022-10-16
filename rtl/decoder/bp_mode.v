@@ -22,9 +22,9 @@ module bp_mode
   input wire fbls, // First line of slice
   input wire substreams123_parsed,
   input wire sos,
-  input wire [6:0] masterQp,
+  input wire signed [7:0] masterQp,
   input wire masterQp_valid,
-  input wire [5:0] minQp,
+  input wire signed [6:0] minQp,
   input wire [8:0] maxQp,
   input wire [12:0] maxPoint,
   input wire [12:0] midPoint,
@@ -44,7 +44,7 @@ module bp_mode
   input wire [16*3*16-1:0] pQuant_p,
   input wire pQuant_valid,
   
-  output reg [6:0] masterQpForBp,
+  output reg [7:0] masterQpForBp,
   input wire [3*7-1:0] qp_p,
   input wire qp_valid,
   
@@ -312,13 +312,13 @@ always @ (*)
   else
     masterQpOffset = 3'd0;
 
-reg [7:0] UnclampedMasterQpForBp;
+reg signed [8:0] UnclampedMasterQpForBp;
 always @ (*) begin
-  UnclampedMasterQpForBp = masterQp + masterQpOffset;
+  UnclampedMasterQpForBp = masterQp + $signed({1'b0, masterQpOffset});
   if (UnclampedMasterQpForBp < minQp)
     masterQpForBp = minQp;
-  else if (UnclampedMasterQpForBp > maxQp)
-    masterQpForBp = maxQp;
+  else if (UnclampedMasterQpForBp > $signed({1'b0, maxQp}))
+    masterQpForBp = $signed({1'b0, maxQp});
   else
     masterQpForBp = UnclampedMasterQpForBp;
 end

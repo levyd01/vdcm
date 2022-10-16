@@ -54,7 +54,7 @@ module slice_decoder
   input wire isSliceWidthMultipleOf16,
   input wire [11:0] rcStuffingBitsX9,
   input wire [8*8-1:0] max_qp_lut_p,
-  input wire signed [5:0] minQp,
+  input wire signed [6:0] minQp,
   input wire [15:0] rc_buffer_init_size,
   input wire [7:0] flatness_qp_very_flat_fbls,
   input wire [7:0] flatness_qp_very_flat_nfbls,
@@ -64,7 +64,8 @@ module slice_decoder
   input wire [3*2-1:0] partitionSize_p,
   input wire [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-4-1:0] rcOffsetThreshold,
   input wire [39:0] slice_num_bits,
-  input wire [34:0] sliceNumDwords,
+  input wire [4:0] OffsetAtBeginOfSlice,
+  input wire [34:0] sliceSizeInRamInBytes,
   
   input wire [255:0] in_data,
   input wire in_sof,
@@ -166,7 +167,8 @@ substream_demux_u
   .slice_num_bits               (slice_num_bits),
   .num_extra_mux_bits           (num_extra_mux_bits),
   .chunk_size                   (chunk_size),
-  .sliceNumDwords               (sliceNumDwords),
+  .OffsetAtBeginOfSlice         (OffsetAtBeginOfSlice),
+  .sliceSizeInRamInBytes        (sliceSizeInRamInBytes),
   .slices_per_line              (slices_per_line),
 
   .in_data                      (in_data),
@@ -199,7 +201,7 @@ wire [1:0] flatnessType;
 wire enableUnderflowPrevention;
 wire [16*3*16-1:0] pQuant_p;
 wire pQuant_valid;
-wire [6:0] masterQp;
+wire signed [7:0] masterQp;
 wire masterQp_valid;
 wire [12:0] blockBits;
 wire blockBits_valid;

@@ -31,7 +31,7 @@ always @ (*) begin
         if (B[13]) dst_b = 12'd0; else if (|B[12:10]) dst_b = 12'd1023; else dst_b = B[11:0];
         if (R[13]) dst_r = 12'd0; else if (|R[12:10]) dst_r = 12'd1023; else dst_r = R[11:0];
       end
-    12'd1023:
+    12'd4095:
       begin
         if (G[13]) dst_g = 12'd0; else if (G[12]) dst_g = 12'd4095; else dst_g = G[11:0];
         if (B[13]) dst_b = 12'd0; else if (B[12]) dst_b = 12'd4095; else dst_b = B[11:0];

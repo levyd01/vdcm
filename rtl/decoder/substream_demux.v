@@ -22,7 +22,8 @@ module substream_demux
   input wire [39:0] slice_num_bits,
   input wire [15:0] num_extra_mux_bits,
   input wire [15:0] chunk_size,
-  input wire [34:0] sliceNumDwords,
+  input wire [4:0] OffsetAtBeginOfSlice,
+  input wire [34:0] sliceSizeInRamInBytes,
   input wire [9:0] slices_per_line,
   
   input wire [255:0] in_data,
@@ -50,7 +51,7 @@ module substream_demux
 
 );
 
-parameter RATE_BUFF_NUM_LINES = 512;
+parameter RATE_BUFF_NUM_LINES = 2**9;
 parameter RATE_BUFF_ADDR_WIDTH = $clog2(RATE_BUFF_NUM_LINES);
 
 // Unpack inputs
@@ -102,6 +103,8 @@ assign initDecodeDelay = initDecodeDelay_i >> 8;
 
 reg [9:0] initDecodeDelayCnt;
 reg rate_buf_read_allowed;
+wire rd_en;
+wire rd_valid;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n) begin
     initDecodeDelayCnt <= 10'd0;
@@ -130,15 +133,21 @@ always @ (posedge clk or negedge rst_n)
     rate_buf_read_allowed_dl <= rate_buf_read_allowed;
 assign start_decode = rate_buf_read_allowed & ~rate_buf_read_allowed_dl;
 
-wire rd_en;
-
-reg [15:0] sliceDwordRemaining;
+reg first_rd_valid_of_slice;
+reg first_rd_en_of_slice;    
 always @ (posedge clk)
-  if ((initDecodeDelayCnt == initDecodeDelay - 3'd3) | (early_eos & ~eof))
-    sliceDwordRemaining <= sliceNumDwords;
-  else if (rd_en)
-    sliceDwordRemaining <= sliceDwordRemaining - 1'b1;
-
+  first_rd_valid_of_slice <= first_rd_en_of_slice;
+reg [RATE_BUFF_ADDR_WIDTH+5-1:0] nextStartOfSliceInBytes;
+always @ (posedge clk)
+  if (in_sof)
+    nextStartOfSliceInBytes <= {(RATE_BUFF_ADDR_WIDTH+5){1'b0}};
+  else if (first_rd_en_of_slice)
+    nextStartOfSliceInBytes <= nextStartOfSliceInBytes + (sliceSizeInRamInBytes & ((RATE_BUFF_NUM_LINES<<5)-1));
+wire [RATE_BUFF_ADDR_WIDTH-1:0] nextStartOfSliceAddr;
+wire [4:0] nextStartOfSliceOffsetInWord;
+assign nextStartOfSliceAddr = (nextStartOfSliceInBytes>>5) & (RATE_BUFF_NUM_LINES-1);
+assign nextStartOfSliceOffsetInWord = nextStartOfSliceInBytes & 5'h1f;
+  
 
 wire eos_pulse;
 reg eos_dl;
@@ -156,12 +165,8 @@ always @ (posedge clk or negedge rst_n)
   else if (in_sof)
     rate_buffer_addr_r <= {RATE_BUFF_ADDR_WIDTH{1'b0}};
   // Bypass garbage at end of slice. See spec. p.157 "SSM needs a small portion of the total slice rate to be set aside to guarantee correct behavior at the end of the slice.  
-  else if (early_eos & ~eof) begin
-    if (rate_buffer_addr_r + sliceDwordRemaining > RATE_BUFF_NUM_LINES-1)
-      rate_buffer_addr_r <= rate_buffer_addr_r + sliceDwordRemaining - RATE_BUFF_NUM_LINES;
-    else
-      rate_buffer_addr_r <= rate_buffer_addr_r + sliceDwordRemaining;
-  end
+  else if (early_eos) 
+    rate_buffer_addr_r <= nextStartOfSliceAddr;
   else if (rd_en)
     if (rate_buffer_addr_r == RATE_BUFF_NUM_LINES-1)
       rate_buffer_addr_r <= {RATE_BUFF_ADDR_WIDTH{1'b0}};
@@ -169,7 +174,6 @@ always @ (posedge clk or negedge rst_n)
       rate_buffer_addr_r <= rate_buffer_addr_r + 1'b1;
 
 wire [255:0] rd_data;
-wire rd_valid;
 
 dp_ram
 #(
@@ -289,6 +293,14 @@ always @ (posedge clk or negedge rst_n)
       rd_data_fullness <= 6'd32;
 
       
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    first_rd_en_of_slice <= 1'b0;
+  else if (flush | first_rd_en_of_slice)
+    first_rd_en_of_slice <= 1'b0;
+  else if (start_decode)
+    first_rd_en_of_slice <= 1'b1;
+    
 reg [8:0] commonByteBufferFullness; // In bytes
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
@@ -296,7 +308,9 @@ always @ (posedge clk or negedge rst_n)
   else if ((in_sof & in_valid) | (early_eos & ~eof))
     commonByteBufferFullness <= 8'd0;
   else if (initDecodeDelayCnt >= initDecodeDelay - 3'd2) // Start to fill the common buffer a bit before it is allowed to read
-    if (rd_en & ~(|mux_word_valid)) // Only push to commonByteBuffer
+    if (first_rd_en_of_slice) // We know that at this point in time there will never be pull
+      commonByteBufferFullness <= commonByteBufferFullness + 6'd32 - nextStartOfSliceOffsetInWord;
+    else if (rd_en & ~(|mux_word_valid)) // Only push to commonByteBuffer
       commonByteBufferFullness <= commonByteBufferFullness + rd_data_fullness;
     else if ((|mux_word_valid) & ~rd_en) // Only pull from commonByteBuffer
       commonByteBufferFullness <= commonByteBufferFullness - (num_mux_word_valid*ssm_max_se_size[7:3]);
@@ -308,46 +322,86 @@ assign rd_en = rate_buf_read_allowed_dl & (commonByteBufferFullness <= (ssm_max_
 reg [5:0] rd_data_fullness_dl;
 always @ (posedge clk)
   rd_data_fullness_dl <= rd_data_fullness;
+  
+reg [4:0] alt_nextStartOfSliceOffsetInWord_dl;
+always @ (posedge clk)
+  alt_nextStartOfSliceOffsetInWord_dl <= nextStartOfSliceOffsetInWord;
 
 integer i;
 parameter MAX_SSM_MAX_SE_SIZE = 160; // 160 bits = 36-bpp maximum for 4:4:4 at 12bpc (see Figure D-6 in spec), per substream
 reg [1023:0] commonByteBuffer;
 always @ (posedge clk)
-  if (rd_valid) 
-    case (rd_data_fullness_dl)
-      6'd1  : commonByteBuffer <= {commonByteBuffer[1024 - 1* 8-1:0], rd_data[31*8+:   8]};
-      6'd2  : commonByteBuffer <= {commonByteBuffer[1024 - 2* 8-1:0], rd_data[30*8+: 2*8]};
-      6'd3  : commonByteBuffer <= {commonByteBuffer[1024 - 3* 8-1:0], rd_data[29*8+: 3*8]};
-      6'd4  : commonByteBuffer <= {commonByteBuffer[1024 - 4* 8-1:0], rd_data[28*8+: 4*8]};
-      6'd5  : commonByteBuffer <= {commonByteBuffer[1024 - 5* 8-1:0], rd_data[27*8+: 5*8]};
-      6'd6  : commonByteBuffer <= {commonByteBuffer[1024 - 6* 8-1:0], rd_data[26*8+: 6*8]};
-      6'd7  : commonByteBuffer <= {commonByteBuffer[1024 - 7* 8-1:0], rd_data[25*8+: 7*8]};
-      6'd8  : commonByteBuffer <= {commonByteBuffer[1024 - 8* 8-1:0], rd_data[24*8+: 8*8]};
-      6'd9  : commonByteBuffer <= {commonByteBuffer[1024 - 9* 8-1:0], rd_data[23*8+: 9*8]};
-      6'd10 : commonByteBuffer <= {commonByteBuffer[1024 -10* 8-1:0], rd_data[22*8+:10*8]};
-      6'd11 : commonByteBuffer <= {commonByteBuffer[1024 -11* 8-1:0], rd_data[21*8+:11*8]};
-      6'd12 : commonByteBuffer <= {commonByteBuffer[1024 -12* 8-1:0], rd_data[20*8+:12*8]};
-      6'd13 : commonByteBuffer <= {commonByteBuffer[1024 -13* 8-1:0], rd_data[19*8+:13*8]};
-      6'd14 : commonByteBuffer <= {commonByteBuffer[1024 -14* 8-1:0], rd_data[18*8+:14*8]};
-      6'd15 : commonByteBuffer <= {commonByteBuffer[1024 -15* 8-1:0], rd_data[17*8+:15*8]};
-      6'd16 : commonByteBuffer <= {commonByteBuffer[1024 -16* 8-1:0], rd_data[16*8+:16*8]};
-      6'd17 : commonByteBuffer <= {commonByteBuffer[1024 -17* 8-1:0], rd_data[15*8+:17*8]};
-      6'd18 : commonByteBuffer <= {commonByteBuffer[1024 -18* 8-1:0], rd_data[14*8+:18*8]};
-      6'd19 : commonByteBuffer <= {commonByteBuffer[1024 -19* 8-1:0], rd_data[13*8+:19*8]};
-      6'd20 : commonByteBuffer <= {commonByteBuffer[1024 -20* 8-1:0], rd_data[12*8+:20*8]};
-      6'd21 : commonByteBuffer <= {commonByteBuffer[1024 -21* 8-1:0], rd_data[11*8+:21*8]};
-      6'd22 : commonByteBuffer <= {commonByteBuffer[1024 -22* 8-1:0], rd_data[10*8+:22*8]};
-      6'd23 : commonByteBuffer <= {commonByteBuffer[1024 -23* 8-1:0], rd_data[ 9*8+:23*8]};
-      6'd24 : commonByteBuffer <= {commonByteBuffer[1024 -24* 8-1:0], rd_data[ 8*8+:24*8]};
-      6'd25 : commonByteBuffer <= {commonByteBuffer[1024 -25* 8-1:0], rd_data[ 7*8+:25*8]};
-      6'd26 : commonByteBuffer <= {commonByteBuffer[1024 -26* 8-1:0], rd_data[ 6*8+:26*8]};
-      6'd27 : commonByteBuffer <= {commonByteBuffer[1024 -27* 8-1:0], rd_data[ 5*8+:27*8]};
-      6'd28 : commonByteBuffer <= {commonByteBuffer[1024 -28* 8-1:0], rd_data[ 4*8+:28*8]};
-      6'd29 : commonByteBuffer <= {commonByteBuffer[1024 -29* 8-1:0], rd_data[ 3*8+:29*8]};
-      6'd30 : commonByteBuffer <= {commonByteBuffer[1024 -30* 8-1:0], rd_data[ 2*8+:30*8]};
-      6'd31 : commonByteBuffer <= {commonByteBuffer[1024 -31* 8-1:0], rd_data[ 1*8+:31*8]};
-      6'd32 : commonByteBuffer <= {commonByteBuffer[767:0], rd_data};
-    endcase
+  if (rd_valid)
+    if (first_rd_valid_of_slice)
+      case (alt_nextStartOfSliceOffsetInWord_dl)
+        5'd0  : commonByteBuffer <= {commonByteBuffer[767:0], rd_data};
+        5'd1  : commonByteBuffer <= {commonByteBuffer[1024 -31* 8-1:0], rd_data[31*8-1:0]};
+        5'd2  : commonByteBuffer <= {commonByteBuffer[1024 -30* 8-1:0], rd_data[30*8-1:0]};
+        5'd3  : commonByteBuffer <= {commonByteBuffer[1024 -29* 8-1:0], rd_data[29*8-1:0]};
+        5'd4  : commonByteBuffer <= {commonByteBuffer[1024 -28* 8-1:0], rd_data[28*8-1:0]};
+        5'd5  : commonByteBuffer <= {commonByteBuffer[1024 -27* 8-1:0], rd_data[27*8-1:0]};
+        5'd6  : commonByteBuffer <= {commonByteBuffer[1024 -26* 8-1:0], rd_data[26*8-1:0]};
+        5'd7  : commonByteBuffer <= {commonByteBuffer[1024 -25* 8-1:0], rd_data[25*8-1:0]};
+        5'd8  : commonByteBuffer <= {commonByteBuffer[1024 -24* 8-1:0], rd_data[24*8-1:0]};
+        5'd9  : commonByteBuffer <= {commonByteBuffer[1024 -23* 8-1:0], rd_data[23*8-1:0]};
+        5'd10 : commonByteBuffer <= {commonByteBuffer[1024 -22* 8-1:0], rd_data[22*8-1:0]};
+        5'd11 : commonByteBuffer <= {commonByteBuffer[1024 -21* 8-1:0], rd_data[21*8-1:0]};
+        5'd12 : commonByteBuffer <= {commonByteBuffer[1024 -20* 8-1:0], rd_data[20*8-1:0]};
+        5'd13 : commonByteBuffer <= {commonByteBuffer[1024 -19* 8-1:0], rd_data[19*8-1:0]};
+        5'd14 : commonByteBuffer <= {commonByteBuffer[1024 -18* 8-1:0], rd_data[18*8-1:0]};
+        5'd15 : commonByteBuffer <= {commonByteBuffer[1024 -17* 8-1:0], rd_data[17*8-1:0]};
+        5'd16 : commonByteBuffer <= {commonByteBuffer[1024 -16* 8-1:0], rd_data[16*8-1:0]};
+        5'd17 : commonByteBuffer <= {commonByteBuffer[1024 -15* 8-1:0], rd_data[15*8-1:0]};
+        5'd18 : commonByteBuffer <= {commonByteBuffer[1024 -14* 8-1:0], rd_data[14*8-1:0]};
+        5'd19 : commonByteBuffer <= {commonByteBuffer[1024 -13* 8-1:0], rd_data[13*8-1:0]};
+        5'd20 : commonByteBuffer <= {commonByteBuffer[1024 -12* 8-1:0], rd_data[12*8-1:0]};
+        5'd21 : commonByteBuffer <= {commonByteBuffer[1024 -11* 8-1:0], rd_data[11*8-1:0]};
+        5'd22 : commonByteBuffer <= {commonByteBuffer[1024 -10* 8-1:0], rd_data[10*8-1:0]};
+        5'd23 : commonByteBuffer <= {commonByteBuffer[1024 - 9* 8-1:0], rd_data[ 9*8-1:0]};
+        5'd24 : commonByteBuffer <= {commonByteBuffer[1024 - 8* 8-1:0], rd_data[ 8*8-1:0]};
+        5'd25 : commonByteBuffer <= {commonByteBuffer[1024 - 7* 8-1:0], rd_data[ 7*8-1:0]};
+        5'd26 : commonByteBuffer <= {commonByteBuffer[1024 - 6* 8-1:0], rd_data[ 6*8-1:0]};
+        5'd27 : commonByteBuffer <= {commonByteBuffer[1024 - 5* 8-1:0], rd_data[ 5*8-1:0]};
+        5'd28 : commonByteBuffer <= {commonByteBuffer[1024 - 4* 8-1:0], rd_data[ 4*8-1:0]};
+        5'd29 : commonByteBuffer <= {commonByteBuffer[1024 - 3* 8-1:0], rd_data[ 3*8-1:0]};
+        5'd30 : commonByteBuffer <= {commonByteBuffer[1024 - 2* 8-1:0], rd_data[ 2*8-1:0]};
+        5'd31 : commonByteBuffer <= {commonByteBuffer[1024 - 1* 8-1:0], rd_data[ 1*8-1:0]};
+      endcase
+    else
+      case (rd_data_fullness_dl)
+        6'd1  : commonByteBuffer <= {commonByteBuffer[1024 - 1* 8-1:0], rd_data[31*8+:   8]};
+        6'd2  : commonByteBuffer <= {commonByteBuffer[1024 - 2* 8-1:0], rd_data[30*8+: 2*8]};
+        6'd3  : commonByteBuffer <= {commonByteBuffer[1024 - 3* 8-1:0], rd_data[29*8+: 3*8]};
+        6'd4  : commonByteBuffer <= {commonByteBuffer[1024 - 4* 8-1:0], rd_data[28*8+: 4*8]};
+        6'd5  : commonByteBuffer <= {commonByteBuffer[1024 - 5* 8-1:0], rd_data[27*8+: 5*8]};
+        6'd6  : commonByteBuffer <= {commonByteBuffer[1024 - 6* 8-1:0], rd_data[26*8+: 6*8]};
+        6'd7  : commonByteBuffer <= {commonByteBuffer[1024 - 7* 8-1:0], rd_data[25*8+: 7*8]};
+        6'd8  : commonByteBuffer <= {commonByteBuffer[1024 - 8* 8-1:0], rd_data[24*8+: 8*8]};
+        6'd9  : commonByteBuffer <= {commonByteBuffer[1024 - 9* 8-1:0], rd_data[23*8+: 9*8]};
+        6'd10 : commonByteBuffer <= {commonByteBuffer[1024 -10* 8-1:0], rd_data[22*8+:10*8]};
+        6'd11 : commonByteBuffer <= {commonByteBuffer[1024 -11* 8-1:0], rd_data[21*8+:11*8]};
+        6'd12 : commonByteBuffer <= {commonByteBuffer[1024 -12* 8-1:0], rd_data[20*8+:12*8]};
+        6'd13 : commonByteBuffer <= {commonByteBuffer[1024 -13* 8-1:0], rd_data[19*8+:13*8]};
+        6'd14 : commonByteBuffer <= {commonByteBuffer[1024 -14* 8-1:0], rd_data[18*8+:14*8]};
+        6'd15 : commonByteBuffer <= {commonByteBuffer[1024 -15* 8-1:0], rd_data[17*8+:15*8]};
+        6'd16 : commonByteBuffer <= {commonByteBuffer[1024 -16* 8-1:0], rd_data[16*8+:16*8]};
+        6'd17 : commonByteBuffer <= {commonByteBuffer[1024 -17* 8-1:0], rd_data[15*8+:17*8]};
+        6'd18 : commonByteBuffer <= {commonByteBuffer[1024 -18* 8-1:0], rd_data[14*8+:18*8]};
+        6'd19 : commonByteBuffer <= {commonByteBuffer[1024 -19* 8-1:0], rd_data[13*8+:19*8]};
+        6'd20 : commonByteBuffer <= {commonByteBuffer[1024 -20* 8-1:0], rd_data[12*8+:20*8]};
+        6'd21 : commonByteBuffer <= {commonByteBuffer[1024 -21* 8-1:0], rd_data[11*8+:21*8]};
+        6'd22 : commonByteBuffer <= {commonByteBuffer[1024 -22* 8-1:0], rd_data[10*8+:22*8]};
+        6'd23 : commonByteBuffer <= {commonByteBuffer[1024 -23* 8-1:0], rd_data[ 9*8+:23*8]};
+        6'd24 : commonByteBuffer <= {commonByteBuffer[1024 -24* 8-1:0], rd_data[ 8*8+:24*8]};
+        6'd25 : commonByteBuffer <= {commonByteBuffer[1024 -25* 8-1:0], rd_data[ 7*8+:25*8]};
+        6'd26 : commonByteBuffer <= {commonByteBuffer[1024 -26* 8-1:0], rd_data[ 6*8+:26*8]};
+        6'd27 : commonByteBuffer <= {commonByteBuffer[1024 -27* 8-1:0], rd_data[ 5*8+:27*8]};
+        6'd28 : commonByteBuffer <= {commonByteBuffer[1024 -28* 8-1:0], rd_data[ 4*8+:28*8]};
+        6'd29 : commonByteBuffer <= {commonByteBuffer[1024 -29* 8-1:0], rd_data[ 3*8+:29*8]};
+        6'd30 : commonByteBuffer <= {commonByteBuffer[1024 -30* 8-1:0], rd_data[ 2*8+:30*8]};
+        6'd31 : commonByteBuffer <= {commonByteBuffer[1024 -31* 8-1:0], rd_data[ 1*8+:31*8]};
+        6'd32 : commonByteBuffer <= {commonByteBuffer[767:0], rd_data};
+      endcase
     
 reg [8:0] commonByteBufferFullness_dl;
 always @ (posedge clk) 

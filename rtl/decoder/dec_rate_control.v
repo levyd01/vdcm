@@ -49,7 +49,7 @@ module dec_rate_control
   input wire isSliceWidthMultipleOf16,
   input wire [1:0] chroma_format, // 0: 4:4:4, 1: 4:2:2, 2: 4:2:0
   input wire [8*8-1:0] max_qp_lut_p,
-  input wire signed [5:0] minQp,
+  input wire signed [6:0] minQp,
   input wire [15:0] rc_buffer_init_size,
   input wire [7:0] flatness_qp_very_flat_fbls,
   input wire [7:0] flatness_qp_very_flat_nfbls,
@@ -67,7 +67,7 @@ module dec_rate_control
   input wire prevBlockBitsWithoutPadding_valid,
 
   
-  output reg [6:0] qp,
+  output reg signed [7:0] qp,
   output wire qp_valid,
   output reg [8:0] maxQp,
   output reg enableUnderflowPrevention
@@ -450,13 +450,6 @@ always @ (posedge clk)
   if (blockBits_valid_dl[0] | sos)
     targetRate <= baseTargetRate + target_rate_delta_lut[LutTargetRateDeltaIndex];
 
-reg [6:0] prevQp;
-always @ (posedge clk) 
-  if (sos)
-    prevQp = 7'd36;
-  else if (qp_valid)
-    prevQp = qp;
-      
 always @ (posedge clk or negedge rst_n) 
   if (~rst_n)
     enableUnderflowPrevention <= 1'b1;
@@ -557,15 +550,15 @@ always @ (posedge clk)
       minQpOffset <= 4'd8;
 
 wire signed [9:0] qpUnclamped;  
-assign qpUnclamped = $signed({1'b0, qp}) + deltaQp;
-reg [7:0] qpClamped;
+assign qpUnclamped = qp + deltaQp;
+reg signed [7:0] qpClamped;
 always @ (*)
-  if (qpUnclamped < $signed(minQp + minQpOffset))
-    qpClamped = minQp + minQpOffset;
+  if (qpUnclamped < minQp + $signed({1'b0, minQpOffset}))
+    qpClamped = minQp + $signed({1'b0, minQpOffset});
   else if (qpUnclamped > $signed({1'b0, maxQp}))
-    qpClamped = maxQp;
+    qpClamped = $signed({1'b0, maxQp});
   else 
-    qpClamped = qpUnclamped[8:0];
+    qpClamped = qpUnclamped[7:0];
 
 wire [7:0] flatness_qp_very_flat;
 assign flatness_qp_very_flat = fbls ? flatness_qp_very_flat_fbls : flatness_qp_very_flat_nfbls;
@@ -576,14 +569,26 @@ assign lutFlatnessQpIndex = (rcFullness >> 13);
 wire [7:0] lutFlatnessQpSelected;
 assign lutFlatnessQpSelected = flatness_qp_lut[lutFlatnessQpIndex];
 
-reg [7:0] qpFlatnessAdjusted;
+reg signed [7:0] qpFlatnessAdjusted;
 always @ (*)
   if (flatnessFlag)
     case (flatnessType)
-      2'd0: if (flatness_qp_very_flat < qpClamped) qpFlatnessAdjusted = flatness_qp_very_flat; else qpFlatnessAdjusted = qpClamped;
-      2'd1: if (flatness_qp_somewhat_flat < qpClamped) qpFlatnessAdjusted = flatness_qp_somewhat_flat; else qpFlatnessAdjusted = qpClamped;
-      2'd2: if (lutFlatnessQpSelected < qpClamped) qpFlatnessAdjusted = lutFlatnessQpSelected; else qpFlatnessAdjusted = qpClamped;
-      2'd3: if (lutFlatnessQpSelected > qpClamped) qpFlatnessAdjusted = lutFlatnessQpSelected; else qpFlatnessAdjusted = qpClamped;
+      2'd0: if ($signed({1'b0, flatness_qp_very_flat}) < qpClamped)
+              qpFlatnessAdjusted = $signed({1'b0, flatness_qp_very_flat});
+            else
+              qpFlatnessAdjusted = qpClamped;
+      2'd1: if ($signed({1'b0, flatness_qp_somewhat_flat}) < qpClamped)
+              qpFlatnessAdjusted = flatness_qp_somewhat_flat;
+            else
+              qpFlatnessAdjusted = qpClamped;
+      2'd2: if ($signed({1'b0, lutFlatnessQpSelected}) < qpClamped)
+              qpFlatnessAdjusted = $signed({1'b0, lutFlatnessQpSelected});
+            else
+              qpFlatnessAdjusted = qpClamped;
+      2'd3: if ($signed({1'b0, lutFlatnessQpSelected}) > qpClamped)
+              qpFlatnessAdjusted = $signed({1'b0, lutFlatnessQpSelected});
+            else
+              qpFlatnessAdjusted = qpClamped;
       default: qpFlatnessAdjusted = qpClamped;
     endcase
   else
@@ -594,7 +599,7 @@ always @ (posedge clk)
   if (blockBits_valid_dl[0])
     rcFullnessLorE96Percent <= (rcFullness <= 16'd62915);
   
-reg [7:0] qpFirstLineAdjusted;
+reg signed [7:0] qpFirstLineAdjusted;
 always @ (*)
   if (fbls & rcFullnessLorE96Percent & (qpFlatnessAdjusted > maxQp))
     qpFirstLineAdjusted = maxQp;
@@ -605,7 +610,7 @@ always @ (*)
 // UpdateQp
 always @ (posedge clk) 
   if (sos_fsm == 2'd2)
-    qp <= 7'd36;
+    qp <= 8'sd36;
   else if (blockBits_valid_dl[2])
     qp <= qpFirstLineAdjusted;
     

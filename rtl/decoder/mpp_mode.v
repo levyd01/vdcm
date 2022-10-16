@@ -268,6 +268,7 @@ always @ (*)
       pReconAboveBlk_converted[c][col] = /*(blockCsc == 2'd0) ? */$signed({2'b0, pReconAboveBlk_rgb[c][col]})/* : pReconAboveBlk[c][col]*/;
 
 // Mean
+reg signed [15:0] sumReconLeftBlk_converted [2:0][3:0];
 reg signed [13:0] mean [2:0][3:0];
 always @ (posedge clk)
   if (mpp_ctrl_valid)
@@ -283,9 +284,11 @@ always @ (posedge clk)
             mean[c][sb] <= 14'd0;
           else if ((chroma_format == 2'd2) & (c > 0)) // 4:2:0 average of only two pixels of row 0
             mean[c][sb] <= (pReconLeftBlk_converted[c][0][sb<<1] + pReconLeftBlk_converted[c][0][(sb<<1)+1]) >>> 1;
-          else // Average over all pixels of sub block
-            mean[c][sb] <= (pReconLeftBlk_converted[c][0][sb<<1] + pReconLeftBlk_converted[c][0][(sb<<1)+1] + 
-                            pReconLeftBlk_converted[c][1][sb<<1] + pReconLeftBlk_converted[c][1][(sb<<1)+1]) >>> 2;
+          else begin// Average over all pixels of sub block
+            sumReconLeftBlk_converted[c][sb] = pReconLeftBlk_converted[c][0][sb<<1] + pReconLeftBlk_converted[c][0][(sb<<1)+1] + 
+                                               pReconLeftBlk_converted[c][1][sb<<1] + pReconLeftBlk_converted[c][1][(sb<<1)+1];
+            mean[c][sb] <= sumReconLeftBlk_converted[c][sb] >>> 2;
+          end
             
         else // Use above reconstructed pixels (see page 126 of spec)
           mean[c][sb] <= (pReconAboveBlk_converted[c][sb<<1] + pReconAboveBlk_converted[c][(sb<<1)+1]) >>> 1;
