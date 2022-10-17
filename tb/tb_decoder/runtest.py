@@ -48,7 +48,7 @@ for test_nbr in test_nbr_list:
   test_status_dict[test_nbr] = True
   # Copy from selected test directory to main test directory
   os.system("cp golden/test" + str(test_nbr) + "/debugTracerDecoder.txt golden/debugTracerDecoder.txt")
-  os.system("cp golden/test" + str(test_nbr) + "/golden_image.out.ppm golden/golden_image.out.ppm")
+  os.system("cp golden/test" + str(test_nbr) + "/golden_image.out.* golden/.")
   os.system("cp golden/test" + str(test_nbr) + "/test_cfg.txt .")
   os.system("cp golden/test" + str(test_nbr) + "/vdcm.bits .")
   
@@ -58,7 +58,7 @@ for test_nbr in test_nbr_list:
   os.chdir("./..")
   
   # Delete existing image
-  os.system("rm -f ./output_image.ppm")
+  os.system("rm -f ./output_image.*")
   
   if (prepare_only):
     exit(0)
@@ -90,7 +90,9 @@ for test_nbr in test_nbr_list:
   
   # Compare output image to golden image
   if (test_status_dict[test_nbr] == True):
-    file_exists = exists("./output_image.ppm")
+    file_exists_ppm = exists("./output_image.ppm")
+    file_exists_yuv = exists("./output_image.yuv")
+    file_exists = file_exists_ppm or file_exists_yuv
     if (file_exists == False):
        print("Output image does not exist")
        print("###################################")
@@ -98,18 +100,21 @@ for test_nbr in test_nbr_list:
        print("###################################")
        test_status_dict[test_nbr] = False
     if (test_status_dict[test_nbr] == True):
-      cmp_status = os.system("cmp ./output_image.ppm ./golden/golden_image.out.ppm")
-      if (cmp_status != 0):
-         print("Output image does not match with golden image")
-         print("###################################")
-         print("#      Simulation failed :-(      #")
-         print("###################################")
-         test_status_dict[test_nbr] = False
-      else:
-         test_status_dict[test_nbr] = True
-         print("###################################")
-         print("#      Simulation passed :-)      #")
-         print("###################################")
+       if (file_exists_ppm):
+          cmp_status = os.system("cmp ./output_image.ppm ./golden/golden_image.out.ppm")
+       else: 
+          cmp_status = os.system("cmp ./output_image.yuv ./golden/golden_image.out.yuv")
+       if (cmp_status != 0):
+          print("Output image does not match with golden image")
+          print("###################################")
+          print("#      Simulation failed :-(      #")
+          print("###################################")
+          test_status_dict[test_nbr] = False
+       else:
+          test_status_dict[test_nbr] = True
+          print("###################################")
+          print("#      Simulation passed :-)      #")
+          print("###################################")
      
 # Test result summary
 all_pass = True

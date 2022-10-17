@@ -346,7 +346,7 @@ generate
   end
   
 endgenerate
-assign csc = (chroma_format == 2'd0) ? 2'd1 : 2'd2;
+assign csc = (source_color_space == 2'd0) ? 2'd1 : 2'd2; // PPS RGB becomes internally YCoCg. PPS YUV becomes internally YCbCr.
 
 endmodule
 

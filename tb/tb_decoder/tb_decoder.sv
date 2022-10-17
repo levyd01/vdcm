@@ -20,19 +20,34 @@ reg clk_core = 1;
 always
   #(CLK_CORE_PERIOD/2) clk_core = ~clk_core;
   
+function string split_using_delimiter_fn(input int offset, string str,string del,output int cnt);
+  for (int i = offset; i < str.len(); i=i+1) 
+    if (str.getc(i) == del) begin
+       cnt = i;
+       return str.substr(i+1,i+3);
+     end
+endfunction
+  
   
 integer fc;
 integer file_test_cfg;
 integer chunks_per_line;
+integer cnt;
 real bits_per_pixel;
 string comment;
+string image_file_name;
+string image_file_extension;
 real CLK_IN_INT_PERIOD;
 real CLK_OUT_INT_PERIOD;
+event write_output_type;
 initial begin
   file_test_cfg = $fopen("test_cfg.txt", "r");
   fc = $fscanf(file_test_cfg,"%d\t%s\n",chunks_per_line, comment);
   fc = $fscanf(file_test_cfg,"%f\t%s\n", bits_per_pixel, comment);
-
+  fc = $fscanf(file_test_cfg,"%s\t%s\n", image_file_name, comment);
+  image_file_extension = split_using_delimiter_fn(0, image_file_name, ".", cnt);
+  $display("image extension: %s", image_file_extension);
+  ->write_output_type;
   CLK_CORE_PERIOD = (10**6) / (AVG_PIXEL_RATE / 16.0 / chunks_per_line * SPEED_FACTOR);
   CLK_IN_INT_PERIOD = (10**6) / AVG_PIXEL_RATE * (16*256.0/bits_per_pixel);
   CLK_OUT_INT_PERIOD = (10**6) / (AVG_PIXEL_RATE / 4.0 * SPEED_FACTOR);
@@ -177,21 +192,6 @@ uut
 
 );
 
-// Write PPM file
-// --------------
-// PPM header
-integer output_image_file;
-integer CompBitWidth; 
-initial begin
-  output_image_file = $fopen("output_image.ppm", "wb");
-  while (!pps_done) @(posedge clk_in_int);
-  $fdisplay(output_image_file, "P6");
-  $fdisplay(output_image_file, "# VDC-M");
-  $fdisplay(output_image_file, "%0d %0d", uut.frame_width, uut.frame_height);
-  $fdisplay(output_image_file, "%0d", uut.maxPoint);
-  CompBitWidth = (uut.maxPoint == 255) ? 8 : 16;
-end
-// PPM data
 genvar gc, cpi;
 wire [13:0] pixs_out_unpacked [3:0][2:0];
 generate
@@ -204,11 +204,34 @@ endgenerate
 
 always @ (posedge clk_out_int)
   pixs_out_eof_dl <= pixs_out_eof;
-  
+
+
+integer CompBitWidth; 
+initial begin
+  while (!pps_done) @(posedge clk_in_int);
+  CompBitWidth = (uut.maxPoint == 255) ? 8 : 16;
+end
+
+// Write PPM file
+// --------------
+// PPM header
+integer output_image_file;
+initial begin
+  wait(write_output_type.triggered);
+  if (image_file_extension == "ppm") begin
+    output_image_file = $fopen("output_image.ppm", "wb");
+    while (!pps_done) @(posedge clk_in_int);
+    $fdisplay(output_image_file, "P6");
+    $fdisplay(output_image_file, "# VDC-M");
+    $fdisplay(output_image_file, "%0d %0d", uut.frame_width, uut.frame_height);
+    $fdisplay(output_image_file, "%0d", uut.maxPoint);
+  end
+end
+// PPM data
 integer cp;
 integer c;
 always @ (negedge clk_out_int)
-  if (~pixs_out_eof_dl)
+  if (~pixs_out_eof_dl & (image_file_extension == "ppm"))
     for (c=0; c<4; c=c+1)
       if (pixs_out_valid[c])
         for (cp=0; cp<3; cp=cp+1)
@@ -218,6 +241,55 @@ always @ (negedge clk_out_int)
             $fwrite(output_image_file, "%c", {2'b0, pixs_out_unpacked[c][cp][13:8]});
             $fwrite(output_image_file, "%c", pixs_out_unpacked[c][cp][7:0]);
           end
+          
+// Write YUV file
+// --------------
+integer y_array[];
+integer u_array[];
+integer v_array[];
+integer array_len[3];
+initial begin
+  while (!pps_done) @(posedge clk_in_int);
+  array_len[0] = uut.frame_width * uut.frame_height;
+  array_len[1] = array_len[0] >> uut.chroma_format;
+  array_len[2] = array_len[0] >> uut.chroma_format;
+  y_array = new [array_len[0]];
+  u_array = new [array_len[1]];
+  v_array = new [array_len[2]];
+end
+
+integer array_idx = 0;
+always @ (negedge clk_out_int)
+  if (~pixs_out_eof_dl & (image_file_extension == "yuv"))
+    for (c=0; c<4; c=c+1)
+      if (pixs_out_valid[c]) begin
+        y_array[array_idx] = pixs_out_unpacked[c][0];
+        u_array[array_idx] = pixs_out_unpacked[c][1];
+        v_array[array_idx] = pixs_out_unpacked[c][2];
+        array_idx = array_idx + 1;
+      end    
+
+integer word_to_write;
+initial begin
+  @(posedge pixs_out_eof_dl);
+  if (image_file_extension == "yuv") begin
+    output_image_file = $fopen("output_image.yuv", "wb");
+    for (cp=0; cp<3; cp=cp+1)
+      for (c=0; c<array_len[cp]; c=c+1) begin
+        case (cp)
+          0: word_to_write = y_array[c];
+          1: word_to_write = u_array[c];
+          2: word_to_write = v_array[c];
+        endcase
+        if (CompBitWidth == 8)
+          $fwrite(output_image_file, "%c", word_to_write[7:0]);
+        else begin
+          $fwrite(output_image_file, "%c", {2'b0, word_to_write[13:8]});
+          $fwrite(output_image_file, "%c", word_to_write[7:0]);
+        end
+      end
+  end
+end
 
 /////////////////////////
 // Validation

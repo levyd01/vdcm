@@ -15,10 +15,14 @@ with open('test' + str(test_nbr) + '/test_cfg.txt') as fr:
     line = fr.readline() # Number of slices per line
     line_split = line.split('#')
     slicesPerLine = int(line_split[0])
-    line = fr.readline()  # bpp (only used by verilog testbench)
+    line = fr.readline()  # bpp
+    line_split = line.split('#')
+    bpp = line_split[0].rstrip()
     line = fr.readline()  # Source image name
     line_split = line.split('#')
     inFile = line_split[0].rstrip()
+    file_ext_split = inFile.split('.')
+    fileExtension = file_ext_split[1].rstrip()
     line = fr.readline()  # VDCM version (1.1 and 1.2 are the only valid values)
     line_split = line.split('#')
     vdcm_version = line_split[0].rstrip()
@@ -28,8 +32,20 @@ with open('test' + str(test_nbr) + '/test_cfg.txt') as fr:
     line = fr.readline()  # Slice Height override
     line_split = line.split('#')
     sliceHeight = int(line_split[0])
+    if (fileExtension == "yuv"): # Extra arguments needed for YUV input file
+      line = fr.readline() # chromaFormat
+      line_split = line.split('#')
+      chromaFormat = line_split[0].rstrip()
+      line = fr.readline() # bitDepth
+      line_split = line.split('#')
+      bitDepth = line_split[0].rstrip()
+      line = fr.readline() # width
+      line_split = line.split('#')
+      width = line_split[0].rstrip()
+      line = fr.readline() # height
+      line_split = line.split('#')
+      height = line_split[0].rstrip()
     
-
 os.chdir("./../../../c_model/x64")
 # Run VDCM Encoder to generate compressed vdcm.bits
 slicesPerLineArg = "-slicesPerLine " + str(slicesPerLine)
@@ -39,15 +55,30 @@ configFileArg = "-configFile ../config_files/v" + vdcm_version + "/" + configFil
 sliceHeightArg = ""
 if (sliceHeight != 0): # Override default slice height
    sliceHeightArg = "-sliceHeight " + str(sliceHeight)
-os.system("VDCM_Encoder.exe " + inFileArg + " " + slicesPerLineArg + " " + bitstreamArg + " " + configFileArg + " " + sliceHeightArg)
-print("VDCM_Encoder.exe " + inFileArg + " " + slicesPerLineArg + " " + bitstreamArg + " " + configFileArg + " " + sliceHeightArg)
+if (fileExtension == "yuv"):
+  chromaFormatArg = "-chromaFormat " + str(chromaFormat)
+  bppArg = "-bpp " + str(bpp)
+  bitDepthArg = "-bitDepth " + str(bitDepth)
+  widthArg = "-width " + str(width)
+  heightArg = "-height " + str(height)
+  os.system("VDCM_Encoder.exe " + inFileArg + " " + slicesPerLineArg + " " + bitstreamArg + " " + configFileArg + " " + sliceHeightArg + " " \
+                                + chromaFormatArg + " " + bppArg + " " + bitDepthArg + " " + widthArg + " " + heightArg)
+  print("VDCM_Encoder.exe " + inFileArg + " " + slicesPerLineArg + " " + bitstreamArg + " " + configFileArg + " " + sliceHeightArg + " " \
+                            + chromaFormatArg + " " + bppArg + " " + bitDepthArg + " " + widthArg + " " + heightArg)
+else:
+   os.system("VDCM_Encoder.exe " + inFileArg + " " + slicesPerLineArg + " " + bitstreamArg + " " + configFileArg + " " + sliceHeightArg)
+   print("VDCM_Encoder.exe " + inFileArg + " " + slicesPerLineArg + " " + bitstreamArg + " " + configFileArg + " " + sliceHeightArg)
 # Run VDCM Decoder to generate golden image
-recFileArg = "-recFile golden_image.out.ppm"
+if (fileExtension == "yuv"):
+   recFileArg = "-recFile golden_image.out.yuv"
+else:
+   recFileArg = "-recFile golden_image.out.ppm"
 os.system("VDCM_Decoder.exe " + bitstreamArg + " " + recFileArg + " -debugTracer")
+print("VDCM_Decoder.exe " + bitstreamArg + " " + recFileArg + " -debugTracer")
 
 # Copy generated files to test directory
 os.system("cp debugTracerDecoder.txt ../../tb/tb_decoder/golden/test" + str(test_nbr) + "/.")
-os.system("cp golden_image.out.ppm ../../tb/tb_decoder/golden/test" + str(test_nbr) + "/.")
+os.system("cp golden_image.out.* ../../tb/tb_decoder/golden/test" + str(test_nbr) + "/.")
 os.system("cp vdcm.bits ../../tb/tb_decoder/golden/test" + str(test_nbr) + "/.")
 
 
