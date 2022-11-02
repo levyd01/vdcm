@@ -21,6 +21,12 @@ module syntax_parser
   input wire [11:0] rcStuffingBitsX9,
   input wire [1:0] bits_per_component_coded,
   input wire [1:0] source_color_space, // Image original color space 0: RGB, 1: YCoCg, 2: YCbCr (YCoCg is impossible)
+  input wire [3:0] mppf_bits_per_comp_R_Y,
+  input wire [3:0] mppf_bits_per_comp_G_Cb,
+  input wire [3:0] mppf_bits_per_comp_B_Cr,
+  input wire [3:0] mppf_bits_per_comp_Y,
+  input wire [3:0] mppf_bits_per_comp_Co,
+  input wire [3:0] mppf_bits_per_comp_Cg,
 
   input wire [4*MAX_FUNNEL_SHIFTER_SIZE-1:0] data_to_be_parsed_p,
   input wire [3:0] fs_ready,
@@ -236,7 +242,7 @@ reg [3:0] mppQuantBits_0 [2:0];
 reg signed [15:0] mppNextBlockQuant [2:0][15:0];
 reg [15:0] val;
 reg mppfIndexNextBlock;
-reg [1:0] compBits [2:0];
+reg [3:0] compBits [2:0];
 
 // Ssm 0 parser
 // ------------
@@ -258,7 +264,7 @@ always @ (*) begin : proc_parser_0
   for (c = 0; c < 3; c = c + 1) begin
     mppQuantBits_0[c] = 4'd0; // default
     stepSizeSsm0[c] = 4'd0; // default
-    compBits[c] = 2'd0;
+    compBits[c] = 4'd0;
     for (s = 0; s < compNumSamples[c]; s = s + 1) begin
       mppNextBlockQuant[c][s] = 16'b0;
     end
@@ -321,14 +327,16 @@ always @ (*) begin : proc_parser_0
             end
           end
           else begin // curBlockMode == MODE_MPPF
-            if (source_color_space == 2'd2) // YCbCr
-              mppfIndexNextBlock = 1'b0;
+            if (source_color_space == 2'd2) begin // YCbCr
+              mppfIndexNextBlock = 2'd0;
+              nextBlockCsc = 2'd2; // m_mppfAdaptiveCsc[m_mppfIndexNext] in C
+            end
             else begin
               mppfIndexNextBlock = data_to_be_parsed[0][bit_pointer[0]];
               bit_pointer[0] = bit_pointer[0] + 1'b1;
+              nextBlockCsc = {1'b0, mppfIndexNextBlock}; // m_mppfAdaptiveCsc[m_mppfIndexNext] in C
             end
-            // DecodeMppfSuffixBits for Ssm 0
-            nextBlockCsc = {1'b0, mppfIndexNextBlock}; // m_mppfAdaptiveCsc[m_mppfIndexNext] in C
+            
           end          
           // DecodeMppSuffixBits in C for ssmIdx 0
           for (c = 0; c < 3; c = c + 1) begin
@@ -343,7 +351,11 @@ always @ (*) begin : proc_parser_0
                 stepSizeSsm0[c] = nextBlockStepSize;
             end
             else begin // curBlockMode == MODE_MPPF
-              compBits[c] = ~mppfIndexNextBlock ? bitsPerCompA[c] : bitsPerCompB[c];
+              case(c)
+                4'd0: compBits[c] = (~mppfIndexNextBlock | (nextBlockCsc == 2'd2)) ? mppf_bits_per_comp_R_Y : mppf_bits_per_comp_Y;
+                4'd1: compBits[c] = (~mppfIndexNextBlock | (nextBlockCsc == 2'd2)) ? mppf_bits_per_comp_G_Cb : mppf_bits_per_comp_Co;
+                4'd2: compBits[c] = (~mppfIndexNextBlock | (nextBlockCsc == 2'd2)) ? mppf_bits_per_comp_B_Cr : mppf_bits_per_comp_Cg;
+              endcase
               case (bits_per_component_coded)
                 2'd0: stepSizeSsm0[c] = ((nextBlockCsc == 2'd1) & (c > 0)) ? 4'd9 - compBits[c] : 4'd8 - compBits[c];
                 2'd1: stepSizeSsm0[c] = ((nextBlockCsc == 2'd1) & (c > 0)) ? 4'd11 - compBits[c] : 4'd10 - compBits[c];
@@ -379,7 +391,30 @@ always @ (*) begin : proc_parser_0
                   bit_pointer[0] = bit_pointer[0] + mppQuantBits_0[c];
                   mppNextBlockQuant[c][s] = $signed({1'b0, val}) - (16'sd1 << (mppQuantBits_0[c] - 1'b1));
                 end
-              // 4:2:2 TBD
+              // 4:2:2
+              2'd1:
+                if (c == 0)
+                  for (s = 0; s < 8; s = s + 1) begin // See g_mppSsmMapping_422 in C
+                    case(mppQuantBits_0[c])
+                      4'd1: val = data_to_be_parsed[0][bit_pointer[0]];
+                      4'd2: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:2], 2);
+                      4'd3: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:3], 3);
+                      4'd4: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:4], 4);
+                      4'd5: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:5], 5);
+                      4'd6: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:6], 6);
+                      4'd7: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:7], 7);
+                      4'd8: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:8], 8);
+                      4'd9: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:9], 9);
+                      4'd10: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:10], 10);
+                      4'd11: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:11], 11);
+                      4'd12: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:12], 12);
+                      4'd13: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:13], 13);
+                      4'd14: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:14], 14);
+                      4'd15: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:15], 15);
+                    endcase
+                    bit_pointer[0] = bit_pointer[0] + mppQuantBits_0[c];
+                    mppNextBlockQuant[c][s] = $signed({1'b0, val}) - (16'sd1 << (mppQuantBits_0[c] - 1'b1));
+                  end
               // 4:2:0 TBD              
             endcase
           end
@@ -472,6 +507,7 @@ reg signed [15:0] compEcgCoeff [2:0][15:0]; // TBD bit width of each element of 
 reg [3:0] signSigPos;
 reg [15:0] signBitValid [2:0];
 parameter [4*4-1:0] ecTransformEcgStart_444 = 16'h0914;
+parameter [4*4-1:0] ecTransformEcgStart_420 = 16'h0010;
 reg [3:0] groupSkipActive [2:0]; // boolean per ECG (4) and per ssm, excluding ssm 0 (3)
 reg [3:0] prefix [2:0][3:0];
 reg uiBits;
@@ -530,7 +566,7 @@ always @ (*) begin : proc_parser_123
     end
     ecgIdx_s = 4'd0;
     stepSizeSsmX[c] = 4'd0;
-    compBits[c] = 2'd0;
+    compBits[c] = 4'd0;
     blockCsc = 2'd0;
             
     // Parse differently in each mode
@@ -579,7 +615,11 @@ always @ (*) begin : proc_parser_123
           stepSizeSsmX[c] = blockStepSize_r;
       end
       else begin // curBlockMode_r == MODE_MPPF
-        compBits[c] = ~mppfIndex_r ? bitsPerCompA[c] : bitsPerCompB[c];
+        case(c)
+          4'd0: compBits[c] = (~mppfIndex_r | (blockCsc_r == 2'd2)) ? mppf_bits_per_comp_R_Y : mppf_bits_per_comp_Y;
+          4'd1: compBits[c] = (~mppfIndex_r | (blockCsc_r == 2'd2)) ? mppf_bits_per_comp_G_Cb : mppf_bits_per_comp_Co;
+          4'd2: compBits[c] = (~mppfIndex_r | (blockCsc_r == 2'd2)) ? mppf_bits_per_comp_B_Cr : mppf_bits_per_comp_Cg;
+        endcase
         case (bits_per_component_coded)
           2'd0: stepSizeSsmX[c] = ((blockCsc_r == 2'd1) & (c > 0)) ? 4'd9 - compBits[c] : 4'd8 - compBits[c];
           2'd1: stepSizeSsmX[c] = ((blockCsc_r == 2'd1) & (c > 0)) ? 4'd11 - compBits[c] : 4'd10 - compBits[c];
@@ -615,7 +655,29 @@ always @ (*) begin : proc_parser_123
             bit_pointer[curSubstream] = bit_pointer[curSubstream] + mppQuantBits_X[c];
             pQuant[c][s] = $signed({1'b0, val}) - (16'sd1 << (mppQuantBits_X[c] - 1'b1));
           end
-        // 4:2:2 TBD
+        // 4:2:2
+        2'd1:
+          for (s = ((curSubstream == 1) ? 8 : 0); s < ((curSubstream == 1) ? 16 : 8); s = s + 1) begin // See g_mppSsmMapping_422 in C
+            case(mppQuantBits_X[c])
+              4'd1: val = data_to_be_parsed[curSubstream][bit_pointer[curSubstream]];
+              4'd2: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:2], 2);
+              4'd3: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:3], 3);
+              4'd4: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:4], 4);
+              4'd5: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5);
+              4'd6: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
+              4'd7: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:7], 7);
+              4'd8: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:8], 8);
+              4'd9: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:9], 9);
+              4'd10: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:10], 10);
+              4'd11: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:11], 11);
+              4'd12: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:12], 12);
+              4'd13: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:13], 13);
+              4'd14: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:14], 14);
+              4'd15: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:15], 15);
+            endcase
+            bit_pointer[curSubstream] = bit_pointer[curSubstream] + mppQuantBits_X[c];
+            pQuant[c][s] = $signed({1'b0, val}) - (16'sd1 << (mppQuantBits_X[c] - 1'b1));
+          end
         // 4:2:0 TBD              
       endcase
     end
@@ -683,7 +745,11 @@ always @ (*) begin : proc_parser_123
                   curEcgStart[ecgIdx] = ecTransformEcgStart_444[ecgIdx*4+:4];
                   curEcgEnd[c][ecgIdx] = curEcgStart[ecgIdx] + transformEcgMappingLastSigPos_444[lastSigPos[c]][ecgIdx];
                 end
-                // else 4:2:2 or 4:2:0 TBD
+                else if (chroma_format == 2'd1) begin // 4:2:2
+                  curEcgStart[ecgIdx] = ecTransformEcgStart_420[ecgIdx*4+:4];
+                  curEcgEnd[c][ecgIdx] = curEcgStart[ecgIdx] + transformEcgMappingLastSigPos_422[lastSigPos[c]][ecgIdx];
+                end
+                // else 4:2:0 TBD
                 if (curEcgEnd[c][ecgIdx] > {2'b0, curEcgStart[ecgIdx]})
                   ecgDataActive[c][ecgIdx] = 1'b1;
                 else
@@ -927,7 +993,15 @@ always @ (posedge clk or negedge rst_n)
                   pQuant_r[c][s] <= mppBlockQuant_r[c][s];
                 else
                   pQuant_r[c][s] <= pQuant[c][s];
-              // 4:2:2 TBD
+              // 4:2:2
+              2'd1:
+                if (c == 0) // See g_mppSsmMapping_422 in C
+                  if (s < 8)
+                    pQuant_r[c][s] <= mppBlockQuant_r[c][s];
+                  else
+                    pQuant_r[c][s] <= pQuant[c][s];
+                else
+                  pQuant_r[c][s] <= pQuant[c][s];
               // 4:2:0 TBD
             endcase
           else

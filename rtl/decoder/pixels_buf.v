@@ -27,6 +27,7 @@ module pixels_buf
   input wire [1:0] csc, // 0: RGB, 1: YCoCg, 2: YCbCr
   input wire [$clog2(MAX_SLICE_WIDTH)-1:0] slice_width,
   input wire [12:0] maxPoint,
+  input wire [1:0] chroma_format,
   
   input wire parse_substreams, // Early indcation that the pipe runs/stops
   output wire stall_pull, // indication not to pull new data
@@ -111,9 +112,15 @@ assign colIndexStart = pReconBlk_valid_dl[3] ? 3'd4 : 3'd0;
 reg [11:0] csc_lb_data_wr [2:0][3:0]; // data to save to RAM
 always @ (posedge clk)
   if (|pReconBlk_valid_dl[3:2])
-    for (cp=0; cp<3; cp=cp+1)
-      for (ci=colIndexStart; ci<(colIndexStart+4); ci=ci+1) 
-        csc_lb_data_wr[cp][ci-colIndexStart] <= rgb_reg[cp][ci];
+    for (cp=0; cp<3; cp=cp+1) begin
+      if ((chroma_format > 2'd0) & (cp > 0)) begin
+        for (ci=colIndexStart>>1; ci<((colIndexStart>>1)+2); ci=ci+1) 
+          csc_lb_data_wr[cp][ci-(colIndexStart>>1)] <= rgb_reg[cp][ci];
+      end
+      else
+        for (ci=colIndexStart; ci<(colIndexStart+4); ci=ci+1) 
+          csc_lb_data_wr[cp][ci-colIndexStart] <= rgb_reg[cp][ci];
+    end
         
 integer dl;
 reg [11:0] csc_lb_data_wr_dl [1:0][2:0][3:0]; // data to save to RAM delayed to avoid wr and rd on same cycles

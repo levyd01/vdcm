@@ -244,9 +244,10 @@ always @ (negedge clk_out_int)
           
 // Write YUV file
 // --------------
-integer y_array[];
-integer u_array[];
-integer v_array[];
+reg [13:0] y_array[];
+reg [13:0] u_array[];
+reg [13:0] v_array[];
+//integer output_image_textfile;
 integer array_len[3];
 initial begin
   while (!pps_done) @(posedge clk_in_int);
@@ -256,6 +257,7 @@ initial begin
   y_array = new [array_len[0]];
   u_array = new [array_len[1]];
   v_array = new [array_len[2]];
+  //output_image_textfile = $fopen("output_image_textfile.yuv", "w");
 end
 
 integer array_idx = 0;
@@ -264,12 +266,19 @@ always @ (negedge clk_out_int)
     for (c=0; c<4; c=c+1)
       if (pixs_out_valid[c]) begin
         y_array[array_idx] = pixs_out_unpacked[c][0];
-        u_array[array_idx] = pixs_out_unpacked[c][1];
-        v_array[array_idx] = pixs_out_unpacked[c][2];
+        if ((uut.chroma_format > 0) & (c < 2)) begin
+          u_array[(array_idx>>1) + c] = pixs_out_unpacked[c][1];
+          //$fwrite(output_image_textfile, "u_array[%0d] = %d\n", (array_idx>>1) + c, u_array[(array_idx>>1) + c]);
+          v_array[(array_idx>>1) + c] = pixs_out_unpacked[c][2];
+        end
+        else begin
+          u_array[array_idx] = pixs_out_unpacked[c][1];
+          v_array[array_idx] = pixs_out_unpacked[c][2];
+        end
         array_idx = array_idx + 1;
       end    
 
-integer word_to_write;
+reg [13:0] word_to_write;
 initial begin
   @(posedge pixs_out_eof_dl);
   if (image_file_extension == "yuv") begin
@@ -281,8 +290,10 @@ initial begin
           1: word_to_write = u_array[c];
           2: word_to_write = v_array[c];
         endcase
-        if (CompBitWidth == 8)
+        if (CompBitWidth == 8) begin
           $fwrite(output_image_file, "%c", word_to_write[7:0]);
+          if ((cp==1) & (|word_to_write[7:0] == 1'b0)) $display("word_to_write[7:0] = %x", word_to_write[7:0]);
+        end
         else begin
           $fwrite(output_image_file, "%c", {2'b0, word_to_write[13:8]});
           $fwrite(output_image_file, "%c", word_to_write[7:0]);
@@ -335,6 +346,8 @@ task Assert;
   input string message;
   begin
     if (gold != sut) begin
+      $display("Vpos: %0d", uut.gen_slice_decoder[0].slice_decoder_u.block_position_u.blockPosY);
+      $display("Hpos: %0d", uut.gen_slice_decoder[0].slice_decoder_u.block_position_u.blockPosX);
       $display("time: %0t, %0s", $realtime, message);
       $display("Expected: %d", gold);
       $display("Received: %d", sut);
@@ -343,10 +356,27 @@ task Assert;
   end
 endtask
 
+integer s_max[3];
+always @ (uut.chroma_format) begin
+  s_max[0] = 16;
+  if (uut.chroma_format == 0) begin // 4:4:4
+    s_max[1] = 16;
+    s_max[2] = 16;
+  end
+  else if (uut.chroma_format == 1) begin // 4:2:2
+    s_max[1] = 8;
+    s_max[2] = 8;
+  end
+  else begin // 4:2:0
+    s_max[1] = 4;
+    s_max[2] = 4;
+  end
+end
 
 genvar gs;
 string s_idx_str;
 integer slice_cnt [MAX_NBR_SLICES-1:0];
+
 generate
   for (gs=0; gs<MAX_NBR_SLICES; gs=gs+1) begin : gen_slice_validation
     string slice_cnt_str;
@@ -386,16 +416,23 @@ generate
                      (uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.blockMode == uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.MODE_BP) |
                      (uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.blockMode == uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.MODE_MPP) |
                      (uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.blockMode == uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.MODE_MPPF)))
-          if (!$feof(file_pQuant[gs])) begin  
-            fd = $fscanf(file_pQuant[gs],"%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d",
-                         pQuant_g[0][0], pQuant_g[0][1], pQuant_g[0][2], pQuant_g[0][3], pQuant_g[0][4], pQuant_g[0][5], pQuant_g[0][6], pQuant_g[0][7],
-                         pQuant_g[0][8], pQuant_g[0][9], pQuant_g[0][10], pQuant_g[0][11], pQuant_g[0][12], pQuant_g[0][13], pQuant_g[0][14], pQuant_g[0][15],
-                         pQuant_g[1][0], pQuant_g[1][1], pQuant_g[1][2], pQuant_g[1][3], pQuant_g[1][4], pQuant_g[1][5], pQuant_g[1][6], pQuant_g[1][7],
-                         pQuant_g[1][8], pQuant_g[1][9], pQuant_g[1][10], pQuant_g[1][11], pQuant_g[1][12], pQuant_g[1][13], pQuant_g[1][14], pQuant_g[1][15],
-                         pQuant_g[2][0], pQuant_g[2][1], pQuant_g[2][2], pQuant_g[2][3], pQuant_g[2][4], pQuant_g[2][5], pQuant_g[2][6], pQuant_g[2][7],
-                         pQuant_g[2][8], pQuant_g[2][9], pQuant_g[2][10], pQuant_g[2][11], pQuant_g[2][12], pQuant_g[2][13], pQuant_g[2][14], pQuant_g[2][15]);
-            for (c=0; c<3; c=c+1)
-              for (s=0; s<16; s=s+1) begin
+          if (!$feof(file_pQuant[gs])) begin
+            if (uut.chroma_format == 2'd0) // 4:4:4
+              fd = $fscanf(file_pQuant[gs],"%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d",
+                           pQuant_g[0][0], pQuant_g[0][1], pQuant_g[0][2], pQuant_g[0][3], pQuant_g[0][4], pQuant_g[0][5], pQuant_g[0][6], pQuant_g[0][7],
+                           pQuant_g[0][8], pQuant_g[0][9], pQuant_g[0][10], pQuant_g[0][11], pQuant_g[0][12], pQuant_g[0][13], pQuant_g[0][14], pQuant_g[0][15],
+                           pQuant_g[1][0], pQuant_g[1][1], pQuant_g[1][2], pQuant_g[1][3], pQuant_g[1][4], pQuant_g[1][5], pQuant_g[1][6], pQuant_g[1][7],
+                           pQuant_g[1][8], pQuant_g[1][9], pQuant_g[1][10], pQuant_g[1][11], pQuant_g[1][12], pQuant_g[1][13], pQuant_g[1][14], pQuant_g[1][15],
+                           pQuant_g[2][0], pQuant_g[2][1], pQuant_g[2][2], pQuant_g[2][3], pQuant_g[2][4], pQuant_g[2][5], pQuant_g[2][6], pQuant_g[2][7],
+                           pQuant_g[2][8], pQuant_g[2][9], pQuant_g[2][10], pQuant_g[2][11], pQuant_g[2][12], pQuant_g[2][13], pQuant_g[2][14], pQuant_g[2][15]);
+            else if (uut.chroma_format == 2'd1) // 4:2:2
+              fd = $fscanf(file_pQuant[gs],"%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d",
+                           pQuant_g[0][0], pQuant_g[0][1], pQuant_g[0][2], pQuant_g[0][3], pQuant_g[0][4], pQuant_g[0][5], pQuant_g[0][6], pQuant_g[0][7],
+                           pQuant_g[0][8], pQuant_g[0][9], pQuant_g[0][10], pQuant_g[0][11], pQuant_g[0][12], pQuant_g[0][13], pQuant_g[0][14], pQuant_g[0][15],
+                           pQuant_g[1][0], pQuant_g[1][1], pQuant_g[1][2], pQuant_g[1][3], pQuant_g[1][4], pQuant_g[1][5], pQuant_g[1][6], pQuant_g[1][7],
+                           pQuant_g[2][0], pQuant_g[2][1], pQuant_g[2][2], pQuant_g[2][3], pQuant_g[2][4], pQuant_g[2][5], pQuant_g[2][6], pQuant_g[2][7]);
+            for (c=0; c<3; c=c+1) begin
+              for (s=0; s<s_max[c]; s=s+1) begin
                 if ($isunknown(uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.pQuant_r[c][s])) begin
                   $display("Failure: pQuant_r is X");
                   $fatal;
@@ -405,6 +442,7 @@ generate
                 s_idx_str.itoa(gs);
                 Assert(pQuant_g[c][s], uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.pQuant_r[c][s], {"Slice ", slice_cnt_str, ", ", s_idx_str, ": Wrong pQuant_r[",c_str,"][",s_str,"]"});
               end
+            end
           end
           else
             $fclose(file_pQuant[gs]);
@@ -473,7 +511,7 @@ generate
     always @ (*)
       for(comp=0; comp<3; comp=comp+1)             
         for (r=0; r<2; r=r+1)
-          for (c=0; c<8; c=c+1)
+          for (c=0; c<s_max[comp]>>1; c=c+1)
             pReconBlk_uut[gs][comp][r][c] = uut.gen_slice_decoder[gs].slice_decoder_u.decoding_processor_u.pReconBlk_p[(comp*8*2+r*8+c)*14+:14];
        
     string comp_str;
@@ -483,20 +521,30 @@ generate
       if (gs < chunks_per_line)
         if (uut.gen_slice_decoder[gs].slice_decoder_u.decoding_processor_u.pReconBlk_valid)
           if (!$feof(file_pReconBlk[gs])) begin
-            if ($isunknown(uut.gen_slice_decoder[gs].slice_decoder_u.decoding_processor_u.pReconBlk_p)) begin
-              $display("Failure: pReconBlk is X");
-              $fatal;
-            end
-            fd = $fscanf(file_pReconBlk[gs],"%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d",
-                         pReconBlk_g[0][0][0], pReconBlk_g[0][0][1], pReconBlk_g[0][0][2], pReconBlk_g[0][0][3], pReconBlk_g[0][0][4], pReconBlk_g[0][0][5], pReconBlk_g[0][0][6], pReconBlk_g[0][0][7],
-                         pReconBlk_g[0][1][0], pReconBlk_g[0][1][1], pReconBlk_g[0][1][2], pReconBlk_g[0][1][3], pReconBlk_g[0][1][4], pReconBlk_g[0][1][5], pReconBlk_g[0][1][6], pReconBlk_g[0][1][7],
-                         pReconBlk_g[1][0][0], pReconBlk_g[1][0][1], pReconBlk_g[1][0][2], pReconBlk_g[1][0][3], pReconBlk_g[1][0][4], pReconBlk_g[1][0][5], pReconBlk_g[1][0][6], pReconBlk_g[1][0][7],
-                         pReconBlk_g[1][1][0], pReconBlk_g[1][1][1], pReconBlk_g[1][1][2], pReconBlk_g[1][1][3], pReconBlk_g[1][1][4], pReconBlk_g[1][1][5], pReconBlk_g[1][1][6], pReconBlk_g[1][1][7],
-                         pReconBlk_g[2][0][0], pReconBlk_g[2][0][1], pReconBlk_g[2][0][2], pReconBlk_g[2][0][3], pReconBlk_g[2][0][4], pReconBlk_g[2][0][5], pReconBlk_g[2][0][6], pReconBlk_g[2][0][7],
-                         pReconBlk_g[2][1][0], pReconBlk_g[2][1][1], pReconBlk_g[2][1][2], pReconBlk_g[2][1][3], pReconBlk_g[2][1][4], pReconBlk_g[2][1][5], pReconBlk_g[2][1][6], pReconBlk_g[2][1][7]);
+            if (uut.chroma_format == 2'd0) // 4:4:4
+              fd = $fscanf(file_pReconBlk[gs],"%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d",
+                           pReconBlk_g[0][0][0], pReconBlk_g[0][0][1], pReconBlk_g[0][0][2], pReconBlk_g[0][0][3], pReconBlk_g[0][0][4], pReconBlk_g[0][0][5], pReconBlk_g[0][0][6], pReconBlk_g[0][0][7],
+                           pReconBlk_g[0][1][0], pReconBlk_g[0][1][1], pReconBlk_g[0][1][2], pReconBlk_g[0][1][3], pReconBlk_g[0][1][4], pReconBlk_g[0][1][5], pReconBlk_g[0][1][6], pReconBlk_g[0][1][7],
+                           pReconBlk_g[1][0][0], pReconBlk_g[1][0][1], pReconBlk_g[1][0][2], pReconBlk_g[1][0][3], pReconBlk_g[1][0][4], pReconBlk_g[1][0][5], pReconBlk_g[1][0][6], pReconBlk_g[1][0][7],
+                           pReconBlk_g[1][1][0], pReconBlk_g[1][1][1], pReconBlk_g[1][1][2], pReconBlk_g[1][1][3], pReconBlk_g[1][1][4], pReconBlk_g[1][1][5], pReconBlk_g[1][1][6], pReconBlk_g[1][1][7],
+                           pReconBlk_g[2][0][0], pReconBlk_g[2][0][1], pReconBlk_g[2][0][2], pReconBlk_g[2][0][3], pReconBlk_g[2][0][4], pReconBlk_g[2][0][5], pReconBlk_g[2][0][6], pReconBlk_g[2][0][7],
+                           pReconBlk_g[2][1][0], pReconBlk_g[2][1][1], pReconBlk_g[2][1][2], pReconBlk_g[2][1][3], pReconBlk_g[2][1][4], pReconBlk_g[2][1][5], pReconBlk_g[2][1][6], pReconBlk_g[2][1][7]);
+            else if (uut.chroma_format == 2'd1) // 4:2:2
+              fd = $fscanf(file_pReconBlk[gs],"%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d",
+                           pReconBlk_g[0][0][0], pReconBlk_g[0][0][1], pReconBlk_g[0][0][2], pReconBlk_g[0][0][3], pReconBlk_g[0][0][4], pReconBlk_g[0][0][5], pReconBlk_g[0][0][6], pReconBlk_g[0][0][7],
+                           pReconBlk_g[0][1][0], pReconBlk_g[0][1][1], pReconBlk_g[0][1][2], pReconBlk_g[0][1][3], pReconBlk_g[0][1][4], pReconBlk_g[0][1][5], pReconBlk_g[0][1][6], pReconBlk_g[0][1][7],
+                           pReconBlk_g[1][0][0], pReconBlk_g[1][0][1], pReconBlk_g[1][0][2], pReconBlk_g[1][0][3],
+                           pReconBlk_g[1][1][0], pReconBlk_g[1][1][1], pReconBlk_g[1][1][2], pReconBlk_g[1][1][3],
+                           pReconBlk_g[2][0][0], pReconBlk_g[2][0][1], pReconBlk_g[2][0][2], pReconBlk_g[2][0][3],
+                           pReconBlk_g[2][1][0], pReconBlk_g[2][1][1], pReconBlk_g[2][1][2], pReconBlk_g[2][1][3]);
+            // else 4:2:0
             for(comp=0; comp<3; comp=comp+1)             
               for (r=0; r<2; r=r+1)
-                for (c=0; c<8; c=c+1) begin
+                for (c=0; c<s_max[comp]>>1; c=c+1) begin
+                  if ($isunknown(pReconBlk_uut[gs][comp][r][c])) begin
+                    $display("Failure in slice %0d: pReconBlk[%0d][%0d][%0d] is X", gs, comp, r, c);
+                    $fatal;
+                  end
                   r_str = $sformatf("%0d", r);
                   c_str = $sformatf("%0d", c);
                   comp_str = $sformatf("%0d", comp);

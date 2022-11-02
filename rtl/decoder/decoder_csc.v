@@ -96,7 +96,7 @@ always @ (posedge clk or negedge rst_n)
 generate
   for (cpi=0; cpi<3; cpi=cpi+1) begin : gen_cscBlk_p_cpi
     for (gr=0; gr<2; gr=gr+1) begin : gen_cscBlk_p_gr
-      for (gc=0; gc<8; gc=gc+1) begin : gen_cscBlk_p_gc // TBD 4:2:2 and 4:2:0
+      for (gc=0; gc<8; gc=gc+1) begin : gen_cscBlk_p_gc
         assign cscBlk_p[(cpi*16+gr*8+gc)*14+:14] = rgb_reg[cpi][gr][gc];
       end
     end

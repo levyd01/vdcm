@@ -610,7 +610,11 @@ always @ (*)
 // UpdateQp
 always @ (posedge clk) 
   if (sos_fsm == 2'd2)
-    qp <= 8'sd36;
+    case(chroma_format)
+      2'd0: /* 4:4:4 */ qp <= 8'sd36;
+      2'd1: /* 4:2:2 */ qp <= 8'sd30;
+      2'd2: /* 4:2:0 */ qp <= 8'sd32;
+    endcase
   else if (blockBits_valid_dl[2])
     qp <= qpFirstLineAdjusted;
     

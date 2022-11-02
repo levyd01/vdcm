@@ -231,37 +231,37 @@ reg [1:0] partitionSize [2:0];
 always @ (*) begin
     for (c=0; c<3; c=c+1)
       case(chroma_format)
-        2'd0:
+        2'd0: // 4:4:4
           begin
-            blkWidth[c] = 4'd8 >> compScaleX[0*3+c];
-            blkHeight[c] = 2'd2 >> compScaleY[0*3+c];
-            compNumSamples[c] = 5'd16 >> (compScaleX[0*3+c] + compScaleY[0*3+c]);
-            neighborsAboveLenAdjusted[c] = 5'd16 >> compScaleX[0*3+c];
-            partitionSize[c] = 2'd2 >> compScaleX[0*3+c];
+            blkWidth[c] = 4'd8 >> compScaleX[c*3+0];
+            blkHeight[c] = 2'd2 >> compScaleY[c*3+0];
+            compNumSamples[c] = 5'd16 >> (compScaleX[c*3+0] + compScaleY[c*3+0]);
+            neighborsAboveLenAdjusted[c] = 5'd16 >> compScaleX[c*3+0];
+            partitionSize[c] = 2'd2 >> compScaleX[c*3+0];
           end
-        2'd1:
+        2'd1: // 4:2:2
           begin
-            blkWidth[c] = 4'd8 >> compScaleX[1*3+c];
-            blkHeight[c] = 2'd2 >> compScaleY[1*3+c];
-            compNumSamples[c] = 5'd16 >> (compScaleX[1*3+c] + compScaleY[1*3+c]);
-            neighborsAboveLenAdjusted[c] = 5'd16 >> compScaleX[1*3+c];
-            partitionSize[c] = 2'd2 >> compScaleX[1*3+c];
+            blkWidth[c] = 4'd8 >> compScaleX[c*3+1];
+            blkHeight[c] = 2'd2 >> compScaleY[c*3+1];
+            compNumSamples[c] = 5'd16 >> (compScaleX[c*3+1] + compScaleY[c*3+1]);
+            neighborsAboveLenAdjusted[c] = 5'd16 >> compScaleX[c*3+1];
+            partitionSize[c] = 2'd2 >> compScaleX[c*3+1];
           end
         2'd2:
           begin
-            blkWidth[c] = 4'd8 >> compScaleX[2*3+c];
-            blkHeight[c] = 2'd2 >> compScaleY[2*3+c];
-            compNumSamples[c] = 5'd16 >> (compScaleX[2*3+c] + compScaleY[2*3+c]);
-            neighborsAboveLenAdjusted[c] = 5'd16 >> compScaleX[2*3+c];
-            partitionSize[c] = 2'd2 >> compScaleX[2*3+c];
+            blkWidth[c] = 4'd8 >> compScaleX[c*3+2];
+            blkHeight[c] = 2'd2 >> compScaleY[c*3+2];
+            compNumSamples[c] = 5'd16 >> (compScaleX[c*3+2] + compScaleY[c*3+2]);
+            neighborsAboveLenAdjusted[c] = 5'd16 >> compScaleX[c*3+2];
+            partitionSize[c] = 2'd2 >> compScaleX[c*3+2];
           end
         default:
           begin
-            blkWidth[c] = 4'd8 >> compScaleX[0*3+c];
-            blkHeight[c] = 2'd2 >> compScaleY[0*3+c];
-            compNumSamples[c] = 5'd16 >> (compScaleX[0*3+c] + compScaleY[0*3+c]);
-            neighborsAboveLenAdjusted[c] = 5'd16 >> compScaleX[0*3+c];
-            partitionSize[c] = 2'd2 >> compScaleX[0*3+c];
+            blkWidth[c] = 4'd8 >> compScaleX[c*3+0];
+            blkHeight[c] = 2'd2 >> compScaleY[c*3+0];
+            compNumSamples[c] = 5'd16 >> (compScaleX[c*3+0] + compScaleY[c*3+0]);
+            neighborsAboveLenAdjusted[c] = 5'd16 >> compScaleX[c*3+0];
+            partitionSize[c] = 2'd2 >> compScaleX[c*3+0];
           end
       endcase 
     case (bits_per_component_coded)

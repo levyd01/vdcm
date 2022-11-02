@@ -36,6 +36,12 @@ module slice_decoder
   input wire [23:0] rc_fullness_offset_slope,
   input wire [8+9-1:0] rcOffsetInit,
   input wire [16*8-1:0] target_rate_delta_lut_p,
+  input wire [3:0] mppf_bits_per_comp_R_Y,
+  input wire [3:0] mppf_bits_per_comp_G_Cb,
+  input wire [3:0] mppf_bits_per_comp_B_Cr,
+  input wire [3:0] mppf_bits_per_comp_Y,
+  input wire [3:0] mppf_bits_per_comp_Co,
+  input wire [3:0] mppf_bits_per_comp_Cg,
   input wire [3:0] chunk_adj_bits,
   input wire [3:0] maxAdjBits,
   input wire [1:0] source_color_space, // Image original color space 0: RGB, 1: YCoCg, 2: YCbCr (YCoCg is impossible)
@@ -233,6 +239,12 @@ syntax_parser_u
   .rcStuffingBitsX9             (rcStuffingBitsX9),
   .source_color_space           (source_color_space),
   .bits_per_component_coded     (bits_per_component_coded),
+  .mppf_bits_per_comp_R_Y       (mppf_bits_per_comp_R_Y ),
+  .mppf_bits_per_comp_G_Cb      (mppf_bits_per_comp_G_Cb), 
+  .mppf_bits_per_comp_B_Cr      (mppf_bits_per_comp_B_Cr), 
+  .mppf_bits_per_comp_Y         (mppf_bits_per_comp_Y),
+  .mppf_bits_per_comp_Co        (mppf_bits_per_comp_Co),
+  .mppf_bits_per_comp_Cg        (mppf_bits_per_comp_Cg),
                                 
   .data_to_be_parsed_p          (data_to_be_parsed_p),
   .nextBlockIsFls               (nextBlockIsFls),
@@ -325,6 +337,12 @@ decoding_processor_u
   .minPoint_p                   (minPoint_p),
   .neighborsAboveLenAdjusted_p  (neighborsAboveLenAdjusted_p),
   .partitionSize_p              (partitionSize_p),
+  .mppf_bits_per_comp_R_Y       (mppf_bits_per_comp_R_Y ),
+  .mppf_bits_per_comp_G_Cb      (mppf_bits_per_comp_G_Cb), 
+  .mppf_bits_per_comp_B_Cr      (mppf_bits_per_comp_B_Cr), 
+  .mppf_bits_per_comp_Y         (mppf_bits_per_comp_Y),
+  .mppf_bits_per_comp_Co        (mppf_bits_per_comp_Co),
+  .mppf_bits_per_comp_Cg        (mppf_bits_per_comp_Cg),
   
   .pQuant_p                     (pQuant_p),
   .pQuant_valid                 (pQuant_valid),
@@ -441,6 +459,7 @@ output_buffers_u
   
   .sof                          (sof),
   .slice_width                  (slice_width),
+  .chroma_format                (chroma_format),
 
   .cscBlk_valid                 (cscBlk_valid),
   .cscBlk_p                     (cscBlk_p),

@@ -9,6 +9,7 @@ module output_buffers
   input wire sof,
   
   input wire [$clog2(MAX_SLICE_WIDTH)-1:0] slice_width,
+  input wire [1:0] chroma_format,
   
   input wire cscBlk_valid,
   input wire [2*8*3*14-1:0] cscBlk_p, // 4 pixels: {p3c2, p2c2, p1c2, p0c2, p3c1, p2c1, p1c1, p0c1, p3c0, p2c0, p1c0, p0c0}
@@ -25,7 +26,7 @@ wire signed [13:0] cscBlk [2:0][1:0][7:0];
 generate
   for (cpi=0; cpi<3; cpi=cpi+1) begin : gen_cscBlk_cpi
     for (gr=0; gr<2; gr=gr+1) begin : gen_cscBlk_gr
-      for (gc=0; gc<8; gc=gc+1) begin : gen_cscBlk_gc // TBD 4:2:2 and 4:2:0
+      for (gc=0; gc<8; gc=gc+1) begin : gen_cscBlk_gc
         assign cscBlk[cpi][gr][gc] = cscBlk_p[(cpi*16+gr*8+gc)*14+:14];
       end
     end
@@ -50,8 +51,12 @@ reg [13:0] cscBlk_4pix_even_dl [2:0][3:0]; // save the 4 even row pixels that ca
 always @ (posedge clk) 
   if (cscBlk_valid)
     for (cp=0; cp<3; cp=cp+1)
-      for (c=0; c<4; c=c+1)
-        cscBlk_4pix_even_dl[cp][c] <= cscBlk[cp][0][c+4];
+      if ((chroma_format > 2'd0) & (cp > 0))
+        for (c=0; c<2; c=c+1)
+          cscBlk_4pix_even_dl[cp][c] <= cscBlk[cp][0][c+2];
+      else
+        for (c=0; c<4; c=c+1)
+          cscBlk_4pix_even_dl[cp][c] <= cscBlk[cp][0][c+4];
 
 wire even_row_data_valid;
 wire odd_row_data_valid;
@@ -96,8 +101,8 @@ assign er_wr_wrap = ~first_half_of_slice_wr;
 wire [4*3*14-1:0] er_wr_data_p;
 wire [13:0] er_wr_data [3:0][2:0];
 generate
-  for (gc=0; gc<4; gc=gc+1) begin : gen_er_data_p_gc
-    for (cpi=0; cpi<3; cpi=cpi+1) begin : gen_er_data_p_cpi
+  for (cpi=0; cpi<3; cpi=cpi+1) begin : gen_er_data_p_cpi
+    for (gc=0; gc<4; gc=gc+1) begin : gen_er_data_p_gc
       assign er_wr_data[gc][cpi] = cscBlk_valid ? cscBlk[cpi][0][gc] : cscBlk_4pix_even_dl[cpi][gc];
       assign er_wr_data_p[(gc*3+cpi)*14+:14] = er_wr_data[gc][cpi];
     end
@@ -187,8 +192,15 @@ reg [13:0] cscBlk_8pix_odd_dl [2:0][2:0][7:0]; // save the 8 odd row pixels that
 always @ (posedge clk) begin
   if (cscBlk_valid)
     for (cp=0; cp<3; cp=cp+1)
-      for (c=0; c<8; c=c+1)
-        cscBlk_8pix_odd_dl[0][cp][c] <= cscBlk[cp][1][c];
+      if ((chroma_format > 2'd0) & (cp > 0))
+        for (c=0; c<4; c=c+1)
+          if (c < 2)
+            cscBlk_8pix_odd_dl[0][cp][c] <= cscBlk[cp][1][c];
+          else
+            cscBlk_8pix_odd_dl[0][cp][2+c] <= cscBlk[cp][1][c];
+      else
+        for (c=0; c<8; c=c+1)
+          cscBlk_8pix_odd_dl[0][cp][c] <= cscBlk[cp][1][c];
   for(dl=1; dl<3; dl=dl+1)
     for (cp=0; cp<3; cp=cp+1)
       for (c=0; c<8; c=c+1)
@@ -276,8 +288,8 @@ odd_row_buf
 wire [13:0] or_wr_data [3:0][2:0];
 wire [13:0] or_rd_data [3:0][2:0];
 generate
-  for (gc=0; gc<4; gc=gc+1) begin : gen_or_wr_data_gc
-    for (cpi=0; cpi<3; cpi=cpi+1) begin : gen_or_wr_data_cpi
+  for (cpi=0; cpi<3; cpi=cpi+1) begin : gen_or_wr_data_cpi
+    for (gc=0; gc<4; gc=gc+1) begin : gen_or_wr_data_gc
       assign or_wr_data[gc][cpi] = or_wr_data_p[(gc*3+cpi)*14+:14];
       assign or_rd_data[gc][cpi] = or_rd_data_p[(gc*3+cpi)*14+:14];
     end
