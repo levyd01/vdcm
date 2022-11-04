@@ -50,7 +50,7 @@ module decoding_processor
   input wire [12:0] maxPoint,
   input wire [3*14-1:0] minPoint_p,
   input wire [3*5-1:0] neighborsAboveLenAdjusted_p,
-  input wire [16*3*16-1:0] pQuant_p,
+  input wire [16*3*17-1:0] pQuant_p,
   input wire pQuant_valid,
   input wire [$clog2(MAX_SLICE_WIDTH)-1:0] slice_width,
   input wire [3*2-1:0] partitionSize_p,

@@ -292,11 +292,11 @@ initial begin
         endcase
         if (CompBitWidth == 8) begin
           $fwrite(output_image_file, "%c", word_to_write[7:0]);
-          if ((cp==1) & (|word_to_write[7:0] == 1'b0)) $display("word_to_write[7:0] = %x", word_to_write[7:0]);
+          //if ((cp==1) & (|word_to_write[7:0] == 1'b0)) $display("word_to_write[7:0] = %x", word_to_write[7:0]);
         end
         else begin
-          $fwrite(output_image_file, "%c", {2'b0, word_to_write[13:8]});
           $fwrite(output_image_file, "%c", word_to_write[7:0]);
+          $fwrite(output_image_file, "%c", {2'b0, word_to_write[13:8]});
         end
       end
   end

@@ -205,7 +205,7 @@ wire [2:0] prevBlockMode;
 wire flatnessFlag;
 wire [1:0] flatnessType;
 wire enableUnderflowPrevention;
-wire [16*3*16-1:0] pQuant_p;
+wire [16*3*17-1:0] pQuant_p;
 wire pQuant_valid;
 wire signed [7:0] masterQp;
 wire masterQp_valid;

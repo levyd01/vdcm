@@ -41,7 +41,7 @@ module bp_mode
   input wire [7*4-1:0] bpv2x2_sel_p,
   input wire [3:0] bpvTable,
   
-  input wire [16*3*16-1:0] pQuant_p,
+  input wire [16*3*17-1:0] pQuant_p,
   input wire pQuant_valid,
   
   output reg [7:0] masterQpForBp,
@@ -75,7 +75,7 @@ wire [1:0] partitionSize [2:0];
 wire [4:0] blkWidth [2:0];
 wire [1:0] blkHeight [2:0];
 wire [6:0] qp [2:0];
-reg signed [15:0] pQuant [2:0][1:0][7:0];
+reg signed [16:0] pQuant [2:0][1:0][7:0];
 wire signed [13:0] minPoint [2:0];
 reg fbls_dl;
 reg [12:0] meanValue [2:0];
@@ -87,15 +87,15 @@ generate
         assign pReconLeftPix[ci][rowi][coli] = pReconLeftBlk_p[(ci*8*2 + rowi*8 + coli)*14+:14];
         always @ (*)
           case (chroma_format)
-            2'd0: pQuant[ci][rowi][coli] = pQuant_p[(ci*8*2 + rowi*8 + coli)*16+:16];
+            2'd0: pQuant[ci][rowi][coli] = pQuant_p[(ci*8*2 + rowi*8 + coli)*17+:17];
             2'd1: // 4:2:2
               begin
-                pQuant[0][rowi][coli] = pQuant_p[(rowi*8 + coli)*16+:16];
-                pQuant[1][rowi][coli] = pQuant_p[(16 + rowi*4 + coli)*16+:16];
-                pQuant[2][rowi][coli] = pQuant_p[(32 + rowi*4 + coli)*16+:16];
+                pQuant[0][rowi][coli] = pQuant_p[(rowi*8 + coli)*17+:17];
+                pQuant[1][rowi][coli] = pQuant_p[(16 + rowi*4 + coli)*17+:17];
+                pQuant[2][rowi][coli] = pQuant_p[(32 + rowi*4 + coli)*17+:17];
               end
             // 2'd2: 4:2:0 TBD
-            default: pQuant[ci][rowi][coli] = pQuant_p[(ci*8*2 + rowi*8 + coli)*16+:16];
+            default: pQuant[ci][rowi][coli] = pQuant_p[(ci*8*2 + rowi*8 + coli)*17+:17];
           endcase 
       end
     end
@@ -439,8 +439,8 @@ function integer GetPartitionStartOffset;
   end
 endfunction
 
-function signed [14:0] DequantSample;
-  input reg signed [15:0] quant;
+function signed [15:0] DequantSample;
+  input reg signed [16:0] quant;
   input reg [7:0] scale;
   input reg [7:0] offset;
   input reg signed [7:0] shift;
@@ -450,7 +450,7 @@ function signed [14:0] DequantSample;
   reg [23:0] iCoeffQClip_pos_before_shift;
   reg [6:0] absShift;
   begin
-    sign = quant[15];
+    sign = quant[16];
     if (shift > 8'sd0) begin
       absQuant = sign ? ~((quant - 1'b1)) : quant[15:0];
       iCoeffQClip_pos_before_shift = (absQuant * scale) + offset;
@@ -506,7 +506,7 @@ always @ (*)
       x0_base[c][b] = GetPartitionStartOffset(b, c, bpvTable[b], partitionSize[c], blkWidth[c]);
 
 reg signed [13:0] pReconBlk [2:0][1:0][7:0];
-reg signed [14:0] iCoeffQClip [2:0][1:0][7:0];
+reg signed [15:0] iCoeffQClip [2:0][1:0][7:0];
 reg signed [13:0] predBlk [2:0][1:0][7:0];
 always @ (posedge clk) begin : process_pPredBlk
   if (substreams123_parsed_dl[0] & (blockMode_dl[0] == MODE_BP)) begin

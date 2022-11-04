@@ -56,7 +56,7 @@ module syntax_parser
   input wire stall_pull,
   output wire parse_substreams,
   
-  output wire [16*3*16-1:0] pQuant_r_p,
+  output wire [16*3*17-1:0] pQuant_r_p,
   output wire pQuant_r_valid,
   
   output reg [12:0] blockBits,
@@ -238,8 +238,8 @@ reg [6:0] bpv2x1_i_0[1:0]; // Two vectors for subblock 0
 reg [1:0] nextBlockCsc; // 0: RGB, 1: YCoCg
 reg [3:0] nextBlockStepSize;
 reg [3:0] stepSizeSsm0 [2:0];
-reg [3:0] mppQuantBits_0 [2:0];
-reg signed [15:0] mppNextBlockQuant [2:0][15:0];
+reg [4:0] mppQuantBits_0 [2:0];
+reg signed [16:0] mppNextBlockQuant [2:0][15:0];
 reg [15:0] val;
 reg mppfIndexNextBlock;
 reg [3:0] compBits [2:0];
@@ -262,11 +262,11 @@ always @ (*) begin : proc_parser_0
   val = 16'd0; // default
   mppfIndexNextBlock = 1'b0;
   for (c = 0; c < 3; c = c + 1) begin
-    mppQuantBits_0[c] = 4'd0; // default
+    mppQuantBits_0[c] = 5'd0; // default
     stepSizeSsm0[c] = 4'd0; // default
     compBits[c] = 4'd0;
     for (s = 0; s < compNumSamples[c]; s = s + 1) begin
-      mppNextBlockQuant[c][s] = 16'b0;
+      mppNextBlockQuant[c][s] = 17'b0;
     end
   end
   
@@ -387,6 +387,7 @@ always @ (*) begin : proc_parser_0
                     4'd13: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:13], 13);
                     4'd14: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:14], 14);
                     4'd15: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:15], 15);
+                    5'd16: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:16], 16);
                   endcase
                   bit_pointer[0] = bit_pointer[0] + mppQuantBits_0[c];
                   mppNextBlockQuant[c][s] = $signed({1'b0, val}) - (16'sd1 << (mppQuantBits_0[c] - 1'b1));
@@ -411,9 +412,10 @@ always @ (*) begin : proc_parser_0
                       4'd13: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:13], 13);
                       4'd14: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:14], 14);
                       4'd15: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:15], 15);
+                      4'd16: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:16], 16);
                     endcase
                     bit_pointer[0] = bit_pointer[0] + mppQuantBits_0[c];
-                    mppNextBlockQuant[c][s] = $signed({1'b0, val}) - (16'sd1 << (mppQuantBits_0[c] - 1'b1));
+                    mppNextBlockQuant[c][s] = $signed({1'b0, val}) - (17'sd1 << (mppQuantBits_0[c] - 1'b1));
                   end
               // 4:2:0 TBD              
             endcase
@@ -503,7 +505,7 @@ reg [3:0] ecgDataActive [2:0];
 reg [3:0] curEcgStart [3:0]; // Same for all components, one per ECG
 reg [5:0] curEcgEnd [2:0][3:0]; // Different per component, one per ECG
 reg [15:0] coeffSign [2:0];
-reg signed [15:0] compEcgCoeff [2:0][15:0]; // TBD bit width of each element of the array
+reg signed [16:0] compEcgCoeff [2:0][15:0]; // TBD bit width of each element of the array
 reg [3:0] signSigPos;
 reg [15:0] signBitValid [2:0];
 parameter [4*4-1:0] ecTransformEcgStart_444 = 16'h0914;
@@ -514,7 +516,7 @@ reg uiBits;
 reg [4:0] bitsReq [2:0][3:0];
 integer ecgIdx;
 reg useSignMag;
-reg signed [15:0] pQuant [2:0][15:0];
+reg signed [16:0] pQuant [2:0][15:0];
 integer curSubstream;
 reg [3:0] bitsReqFromCodeWord [2:0][3:0];
 reg [3:0] use2x2_r;
@@ -522,14 +524,14 @@ reg [7:0] symbol [2:0];
 reg [6:0] bpv2x2_i [2:0]; // One vector per subblock cmpnt 0 is sb 1
 reg [6:0] bpv2x1_i [2:0][1:0]; // Two vectors per subblock
 reg [3:0] stepSizeSsmX [2:0];
-reg [3:0] mppQuantBits_X [2:0];
+reg [4:0] mppQuantBits_X [2:0];
 reg [1:0] blockCsc;
 
 // in C, DecTop.cpp line #329 - codingModes[mode]->Decode ()
 always @ (*) begin : proc_parser_123
   reg [15:0] th;
-  reg [14:0] pos;
-  reg signed [15:0] neg;
+  reg [15:0] pos;
+  reg signed [16:0] neg;
   reg [3:0] ecgIdx_s;
   integer vecGrK;
   reg [3:0] maxPrefix;
@@ -555,14 +557,14 @@ always @ (*) begin : proc_parser_123
     maxPrefix[3:0] = 4'b0;
     vecGrK = 0;
     vecCodeNumber = 8'b0;
-    mppQuantBits_X[c] = 4'd0; // default
+    mppQuantBits_X[c] = 5'd0; // default
     for (ecgIdx = 0; ecgIdx < 4; ecgIdx = ecgIdx + 1) begin
       bitsReq[c][ecgIdx] = 5'd0;
       prefix[c][ecgIdx] = 4'd0;
     end
     for (s = 0; s < compNumSamples[c]; s = s + 1) begin
-      compEcgCoeff[c][s] = 16'sd0;
-      pQuant[c][s] = 16'b0;
+      compEcgCoeff[c][s] = 17'sd0;
+      pQuant[c][s] = 17'b0;
     end
     ecgIdx_s = 4'd0;
     stepSizeSsmX[c] = 4'd0;
@@ -651,9 +653,10 @@ always @ (*) begin : proc_parser_123
               4'd13: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:13], 13);
               4'd14: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:14], 14);
               4'd15: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:15], 15);
+              4'd16: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:16], 16);
             endcase
             bit_pointer[curSubstream] = bit_pointer[curSubstream] + mppQuantBits_X[c];
-            pQuant[c][s] = $signed({1'b0, val}) - (16'sd1 << (mppQuantBits_X[c] - 1'b1));
+            pQuant[c][s] = $signed({1'b0, val}) - (17'sd1 << (mppQuantBits_X[c] - 1'b1));
           end
         // 4:2:2
         2'd1:
@@ -674,9 +677,10 @@ always @ (*) begin : proc_parser_123
               4'd13: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:13], 13);
               4'd14: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:14], 14);
               4'd15: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:15], 15);
+              4'd16: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:16], 16);
             endcase
             bit_pointer[curSubstream] = bit_pointer[curSubstream] + mppQuantBits_X[c];
-            pQuant[c][s] = $signed({1'b0, val}) - (16'sd1 << (mppQuantBits_X[c] - 1'b1));
+            pQuant[c][s] = $signed({1'b0, val}) - (17'sd1 << (mppQuantBits_X[c] - 1'b1));
           end
         // 4:2:0 TBD              
       endcase
@@ -687,7 +691,7 @@ always @ (*) begin : proc_parser_123
         prefix[c][ecgIdx] = 4'd0;
       end
       for (s = 0; s < compNumSamples[c]; s = s + 1)
-        compEcgCoeff[c][s] = 16'sd0;
+        compEcgCoeff[c][s] = 17'sd0;
       // DecodeAllGroups	
       if (c > 0) begin
         isCompSkip[c] = data_to_be_parsed[curSubstream][bit_pointer[curSubstream]];
@@ -701,7 +705,7 @@ always @ (*) begin : proc_parser_123
           bit_pointer[curSubstream] = bit_pointer[curSubstream] + 1'b1;
         // set all samples to zero
         for (s = 0; s < compNumSamples[c]; s = s + 1) 
-          compEcgCoeff[c][s] = 16'sd0; 
+          compEcgCoeff[c][s] = 17'sd0; 
       end
       // lastSigPos
       if ((curBlockMode_r == MODE_TRANSFORM) & ~isCompSkip[c]) begin
@@ -764,7 +768,7 @@ always @ (*) begin : proc_parser_123
           bit_pointer[curSubstream] = bit_pointer[curSubstream] + 1'b1;
           if (groupSkipActive[c][ecgIdx]) begin
             for (s = curEcgStart[ecgIdx]; s < curEcgEnd[c][ecgIdx]; s = s + 1) 
-              compEcgCoeff[c][s] = 16'sd0; 
+              compEcgCoeff[c][s] = 17'sd0; 
           end
           else begin        
           // bitsReq = DecodePrefix
@@ -838,7 +842,8 @@ always @ (*) begin : proc_parser_123
                     5'd13: compEcgCoeff[c][s] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:13], 13);
                     5'd14: compEcgCoeff[c][s] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:14], 14);
                     5'd15: compEcgCoeff[c][s] = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:15], 15);
-                    default: compEcgCoeff[c][s] = 16'sd0;
+                    5'd16: compEcgCoeff[c][s] = $signed({1'b0, BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:16], 16)});
+                    default: compEcgCoeff[c][s] = 17'sd0;
                   endcase
                   //$display("time: %0t, CPEC ECG (SM) compEcgCoeff[%0d][%0d] = %d", $realtime, c, s, compEcgCoeff[c][s]);
                   bit_pointer[curSubstream] = bit_pointer[curSubstream] + bitsReq[c][ecgIdx];
@@ -846,7 +851,7 @@ always @ (*) begin : proc_parser_123
               end
 		          // set flag for valid sign bit
 		          for (s = curEcgStart[ecgIdx]; s < curEcgEnd[c][ecgIdx]; s = s + 1)
-		            if (compEcgCoeff[c][s] != 16'd0)
+		            if (compEcgCoeff[c][s] != 17'sd0)
 		  	          signBitValid[c][s] = 1'b1;
 		  	        else
 		  	          signBitValid[c][s] = 1'b0;
@@ -908,11 +913,12 @@ always @ (*) begin : proc_parser_123
                     5'd13: pos = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:13], 13);
                     5'd14: pos = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:14], 14);
                     5'd15: pos = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:15], 15);
-                    default: pos = 15'd0;
+                    5'd16: pos = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:16], 16);
+                    default: pos = 16'd0;
                   endcase
                   //$display("pos = %d", pos);
 		  	          bit_pointer[curSubstream] = bit_pointer[curSubstream] + bitsReq[c][ecgIdx];
-                  neg = $signed({1'b0, pos}) - $signed({1'b0, 15'b1 << bitsReq[c][ecgIdx]});
+                  neg = $signed({1'b0, pos}) - $signed({1'b0, 16'b1 << bitsReq[c][ecgIdx]});
                   //$display("neg = %d", neg);
                   compEcgCoeff[c][s] = (pos > th) ? neg : $signed({1'b0, pos});
                   //$display("CPEC ECG (2C) compEcgCoeff[%d][%d] = %d", c, s, compEcgCoeff[c][s]);
@@ -936,7 +942,7 @@ always @ (*) begin : proc_parser_123
           // signLastSigPos
           if (curBlockMode_r == MODE_TRANSFORM)
             if (~((lastSigPos[c] == 4'd0) & (c == 0))) begin
-              if (compEcgCoeff[c][lastSigPos[c]] == 4'd0) begin
+              if (compEcgCoeff[c][lastSigPos[c]] == 17'sd0) begin
                 signSigPos[ecgIdx] = data_to_be_parsed[curSubstream][bit_pointer[curSubstream]];
                 bit_pointer[curSubstream] = bit_pointer[curSubstream] + 1'b1;
               end
@@ -970,17 +976,17 @@ always @ (posedge clk or negedge rst_n)
       if (parse_substreams)
         bit_pointer_r[c] <= bit_pointer[c];
 		
-reg signed [15:0] mppBlockQuant_r [2:0][15:0]; // TBD bit width of each element of the array
-reg signed [15:0] pQuant_r [2:0][15:0]; // TBD bit width of each element of the array
+reg signed [16:0] mppBlockQuant_r [2:0][15:0]; // TBD bit width of each element of the array
+reg signed [16:0] pQuant_r [2:0][15:0]; // TBD bit width of each element of the array
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     for (c = 0; c < 3; c = c + 1)
       for (s = 0; s < 16; s = s + 1)
-        pQuant_r[c][s] <= 16'sd0;
+        pQuant_r[c][s] <= 17'b0;
   else if (flush)
     for (c = 0; c < 3; c = c + 1)
       for (s = 0; s < 16; s = s + 1)
-        pQuant_r[c][s] <= 16'sd0;
+        pQuant_r[c][s] <= 17'b0;
   else
     if (parse_substreams)
       for (c = 0; c < 3; c = c + 1)
@@ -1097,7 +1103,7 @@ generate
     assign size_to_remove_p[gi*9+:9] = bit_pointer_r[gi];
     if (gi>0)
       for (si=0; si<16; si=si+1)
-        assign pQuant_r_p[((gi-1)*16+si)*16+:16] = pQuant_r[gi-1][si];
+        assign pQuant_r_p[((gi-1)*16+si)*17+:17] = pQuant_r[gi-1][si];
   end
 endgenerate
 

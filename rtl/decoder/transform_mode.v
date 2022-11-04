@@ -33,7 +33,7 @@ module transform_mode
   input wire [16*3*14-1:0] neighborsAbove_rd_p, // Fetch 16 pixels (4 to the left above the current, 8 exactly above, and 4 to the right above)
   input wire neighborsAbove_valid,
   
-  input wire [16*3*16-1:0] pQuant_p,
+  input wire [16*3*17-1:0] pQuant_p,
   input wire pQuant_valid,
   
   input wire [3*7-1:0] qp_p,
@@ -138,7 +138,7 @@ genvar rowi;
 wire [1:0] blkHeight [2:0];
 wire [4:0] blkWidth [2:0];
 wire [4:0] neighborsAboveLenAdjusted [2:0];
-wire signed [15:0] pQuant [2:0][15:0];
+wire signed [16:0] pQuant [2:0][15:0];
 wire [6:0] qp [2:0];
 wire signed [13:0] minPoint [2:0];
 generate
@@ -148,7 +148,7 @@ generate
     assign neighborsAboveLenAdjusted[ci] = neighborsAboveLenAdjusted_p[5*ci+:5];
     assign minPoint[ci] = minPoint_p[14*ci+:14];
     for (si=0; si<16; si=si+1)
-      assign pQuant[ci][si] = pQuant_p[ci*16*16+si*16+:16];
+      assign pQuant[ci][si] = pQuant_p[ci*16*17+si*17+:17];
     assign qp[ci] = qp_p[ci*7+:7];
   end
 endgenerate
@@ -930,7 +930,7 @@ always @ (*)
     end
   end
 
-localparam DEQUANT_WIDTH = 16 + 7 + (7-3); // pQuant width + quantTable width + (qp width - 3)
+localparam DEQUANT_WIDTH = 17 + 7 + (7-3); // pQuant width + quantTable width + (qp width - 3)
 reg signed [DEQUANT_WIDTH-1:0] pDequant [2:0][15:0];
 always @ (posedge clk)
   if (pQuant_valid)

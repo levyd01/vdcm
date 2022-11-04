@@ -35,7 +35,7 @@ module mpp_mode
   input wire mppfIndex,
   input wire mpp_ctrl_valid, // indicates that blockCsc & blockStepSize are valid
   
-  input wire [16*3*16-1:0] pQuant_p,
+  input wire [16*3*17-1:0] pQuant_p,
   input wire pQuant_valid,
   
   input wire pReconLeftBlk_valid,
@@ -53,14 +53,14 @@ genvar ci, si;
 genvar rowi, coli;
 wire [1:0] blkHeight [2:0];
 wire [4:0] blkWidth [2:0];
-wire signed [15:0] pQuant [2:0][15:0];
+wire signed [16:0] pQuant [2:0][15:0];
 wire signed [13:0] pReconLeftBlk [2:0][1:0][7:0];
 generate
   for (ci =0; ci < 3; ci = ci + 1) begin : gen_unpack_inputs
     assign blkHeight[ci] = blkHeight_p[2*ci+:2];
     assign blkWidth[ci] = blkWidth_p[4*ci+:4];
     for (si=0; si<16; si=si+1) begin : gen_unpack_pquant
-      assign pQuant[ci][si] = pQuant_p[ci*16*16+si*16+:16];
+      assign pQuant[ci][si] = pQuant_p[ci*16*17+si*17+:17];
     end
     for (coli=0; coli<8; coli=coli+1) begin : gen_in_coli
       for (rowi=0; rowi<2; rowi=rowi+1) begin : gen_in_coli
@@ -390,7 +390,7 @@ always @ (posedge clk)
         midpoint[c][sb] <= clip3(middle_dl[c][sb], maxClip[c][sb], mean_converted[c][sb] + (curBias_dl[c]<<1));
 
 // Reconstruct
-reg signed [15:0] pDequant [2:0][1:0][7:0];
+reg signed [16:0] pDequant [2:0][1:0][7:0];
 always @ (posedge clk)
   if (mpp_ctrl_valid_dl[0])
     for (c = 0; c < 3; c = c + 1)
