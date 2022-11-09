@@ -164,7 +164,7 @@ end
 wire [4*3*14-1:0] pixs_out;
 wire [3:0] pixs_out_valid;
 wire pixs_out_eof; //stop writing to file after the last 4 pixels of the frame
-wire [3:0] pixs_out_eol; // indicates position of last valid pixel on the line
+wire pixs_out_eol;
 
 vdcm_decoder
 #(
@@ -187,6 +187,7 @@ uut
   .in_data_is_pps       (in_data_is_pps), // in_data contains PPS before in_sof
   
   .pixs_out             (pixs_out),
+  .pixs_out_eol         (pixs_out_eol),
   .pixs_out_eof         (pixs_out_eof),
   .pixs_out_valid       (pixs_out_valid)
 
@@ -205,6 +206,14 @@ endgenerate
 always @ (posedge clk_out_int)
   pixs_out_eof_dl <= pixs_out_eof;
 
+reg odd_line;
+always @ (posedge clk_out_int or negedge rst_n)
+  if (~rst_n)
+    odd_line <= 1'b0;
+  else if (flush)
+    odd_line <= 1'b0;
+  else if (pixs_out_valid & pixs_out_eol)
+    odd_line <= ~odd_line;
 
 integer CompBitWidth; 
 initial begin
@@ -260,22 +269,30 @@ initial begin
   //output_image_textfile = $fopen("output_image_textfile.yuv", "w");
 end
 
-integer array_idx = 0;
+integer luma_array_idx = 0;
+integer chroma_array_index = 0;
 always @ (negedge clk_out_int)
   if (~pixs_out_eof_dl & (image_file_extension == "yuv"))
     for (c=0; c<4; c=c+1)
       if (pixs_out_valid[c]) begin
-        y_array[array_idx] = pixs_out_unpacked[c][0];
-        if ((uut.chroma_format > 0) & (c < 2)) begin
-          u_array[(array_idx>>1) + c] = pixs_out_unpacked[c][1];
-          //$fwrite(output_image_textfile, "u_array[%0d] = %d\n", (array_idx>>1) + c, u_array[(array_idx>>1) + c]);
-          v_array[(array_idx>>1) + c] = pixs_out_unpacked[c][2];
+        y_array[luma_array_idx] = pixs_out_unpacked[c][0];
+        luma_array_idx = luma_array_idx + 1;
+        if ((uut.chroma_format == 1) & (c < 2)) begin // 4:2:2
+          u_array[chroma_array_index] = pixs_out_unpacked[c][1];
+          v_array[chroma_array_index] = pixs_out_unpacked[c][2];
+          chroma_array_index = chroma_array_index + 1;
         end
-        else begin
-          u_array[array_idx] = pixs_out_unpacked[c][1];
-          v_array[array_idx] = pixs_out_unpacked[c][2];
+        else if ((uut.chroma_format == 2) & ~odd_line & (c < 2)) begin  // In 4:2:0, there are no chroma components on odd rows.
+          u_array[chroma_array_index] = pixs_out_unpacked[c][1];
+          //$fwrite(output_image_textfile, "u_array[%0d] = %d\n", chroma_array_index, u_array[chroma_array_index]);
+          v_array[chroma_array_index] = pixs_out_unpacked[c][2];
+          chroma_array_index = chroma_array_index + 1;
         end
-        array_idx = array_idx + 1;
+        else if (uut.chroma_format == 0) begin // 4:4:4
+          u_array[chroma_array_index] = pixs_out_unpacked[c][1];
+          v_array[chroma_array_index] = pixs_out_unpacked[c][2];
+          chroma_array_index = chroma_array_index + 1;
+        end
       end    
 
 reg [13:0] word_to_write;
@@ -292,7 +309,6 @@ initial begin
         endcase
         if (CompBitWidth == 8) begin
           $fwrite(output_image_file, "%c", word_to_write[7:0]);
-          //if ((cp==1) & (|word_to_write[7:0] == 1'b0)) $display("word_to_write[7:0] = %x", word_to_write[7:0]);
         end
         else begin
           $fwrite(output_image_file, "%c", word_to_write[7:0]);
@@ -357,20 +373,32 @@ task Assert;
 endtask
 
 integer s_max[3];
+integer nb_rows[3];
+integer nb_cols[3];
 always @ (uut.chroma_format) begin
-  s_max[0] = 16;
+  nb_rows[0] = 2;
+  nb_cols[0] = 8;
   if (uut.chroma_format == 0) begin // 4:4:4
-    s_max[1] = 16;
-    s_max[2] = 16;
+    nb_rows[1] = 2;
+    nb_rows[2] = 2;
+    nb_cols[1] = 8;
+    nb_cols[2] = 8;
   end
   else if (uut.chroma_format == 1) begin // 4:2:2
-    s_max[1] = 8;
-    s_max[2] = 8;
+    nb_cols[1] = 4;
+    nb_cols[2] = 4;
+    nb_rows[1] = 2;
+    nb_rows[2] = 2;
   end
   else begin // 4:2:0
-    s_max[1] = 4;
-    s_max[2] = 4;
+    nb_rows[0] = 1;
+    nb_rows[1] = 1;
+    nb_rows[2] = 1;
+    nb_cols[1] = 4;
+    nb_cols[2] = 4;
   end
+  for (c=0; c<3; c=c+1)
+    s_max[c] = nb_rows[c] * nb_cols[c];
 end
 
 genvar gs;
@@ -431,6 +459,12 @@ generate
                            pQuant_g[0][8], pQuant_g[0][9], pQuant_g[0][10], pQuant_g[0][11], pQuant_g[0][12], pQuant_g[0][13], pQuant_g[0][14], pQuant_g[0][15],
                            pQuant_g[1][0], pQuant_g[1][1], pQuant_g[1][2], pQuant_g[1][3], pQuant_g[1][4], pQuant_g[1][5], pQuant_g[1][6], pQuant_g[1][7],
                            pQuant_g[2][0], pQuant_g[2][1], pQuant_g[2][2], pQuant_g[2][3], pQuant_g[2][4], pQuant_g[2][5], pQuant_g[2][6], pQuant_g[2][7]);
+            else if (uut.chroma_format == 2'd2) // 4:2:0
+              fd = $fscanf(file_pQuant[gs],"%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d",
+                           pQuant_g[0][0], pQuant_g[0][1], pQuant_g[0][2], pQuant_g[0][3], pQuant_g[0][4], pQuant_g[0][5], pQuant_g[0][6], pQuant_g[0][7],
+                           pQuant_g[0][8], pQuant_g[0][9], pQuant_g[0][10], pQuant_g[0][11], pQuant_g[0][12], pQuant_g[0][13], pQuant_g[0][14], pQuant_g[0][15],
+                           pQuant_g[1][0], pQuant_g[1][1], pQuant_g[1][2], pQuant_g[1][3],
+                           pQuant_g[2][0], pQuant_g[2][1], pQuant_g[2][2], pQuant_g[2][3]);
             for (c=0; c<3; c=c+1) begin
               for (s=0; s<s_max[c]; s=s+1) begin
                 if ($isunknown(uut.gen_slice_decoder[gs].slice_decoder_u.syntax_parser_u.pQuant_r[c][s])) begin
@@ -511,7 +545,7 @@ generate
     always @ (*)
       for(comp=0; comp<3; comp=comp+1)             
         for (r=0; r<2; r=r+1)
-          for (c=0; c<s_max[comp]>>1; c=c+1)
+          for (c=0; c<8; c=c+1)
             pReconBlk_uut[gs][comp][r][c] = uut.gen_slice_decoder[gs].slice_decoder_u.decoding_processor_u.pReconBlk_p[(comp*8*2+r*8+c)*14+:14];
        
     string comp_str;
@@ -537,10 +571,15 @@ generate
                            pReconBlk_g[1][1][0], pReconBlk_g[1][1][1], pReconBlk_g[1][1][2], pReconBlk_g[1][1][3],
                            pReconBlk_g[2][0][0], pReconBlk_g[2][0][1], pReconBlk_g[2][0][2], pReconBlk_g[2][0][3],
                            pReconBlk_g[2][1][0], pReconBlk_g[2][1][1], pReconBlk_g[2][1][2], pReconBlk_g[2][1][3]);
-            // else 4:2:0
+            else // 4:2:0
+              fd = $fscanf(file_pReconBlk[gs],"%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d",
+                           pReconBlk_g[0][0][0], pReconBlk_g[0][0][1], pReconBlk_g[0][0][2], pReconBlk_g[0][0][3], pReconBlk_g[0][0][4], pReconBlk_g[0][0][5], pReconBlk_g[0][0][6], pReconBlk_g[0][0][7],
+                           pReconBlk_g[0][1][0], pReconBlk_g[0][1][1], pReconBlk_g[0][1][2], pReconBlk_g[0][1][3], pReconBlk_g[0][1][4], pReconBlk_g[0][1][5], pReconBlk_g[0][1][6], pReconBlk_g[0][1][7],
+                           pReconBlk_g[1][0][0], pReconBlk_g[1][0][1], pReconBlk_g[1][0][2], pReconBlk_g[1][0][3],
+                           pReconBlk_g[2][0][0], pReconBlk_g[2][0][1], pReconBlk_g[2][0][2], pReconBlk_g[2][0][3]);
             for(comp=0; comp<3; comp=comp+1)             
-              for (r=0; r<2; r=r+1)
-                for (c=0; c<s_max[comp]>>1; c=c+1) begin
+              for (r=0; r<nb_rows[comp]; r=r+1)
+                for (c=0; c<nb_cols[comp]; c=c+1) begin
                   if ($isunknown(pReconBlk_uut[gs][comp][r][c])) begin
                     $display("Failure in slice %0d: pReconBlk[%0d][%0d][%0d] is X", gs, comp, r, c);
                     $fatal;

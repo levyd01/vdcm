@@ -51,9 +51,15 @@ reg [13:0] cscBlk_4pix_even_dl [2:0][3:0]; // save the 4 even row pixels that ca
 always @ (posedge clk) 
   if (cscBlk_valid)
     for (cp=0; cp<3; cp=cp+1)
-      if ((chroma_format > 2'd0) & (cp > 0))
-        for (c=0; c<2; c=c+1)
-          cscBlk_4pix_even_dl[cp][c] <= cscBlk[cp][0][c+2];
+      if (cp > 0)
+        case (chroma_format)
+          2'd0: 
+            for (c=0; c<4; c=c+1)
+              cscBlk_4pix_even_dl[cp][c] <= cscBlk[cp][0][c+4];
+          2'd1, 2'd2: 
+            for (c=0; c<2; c=c+1)
+              cscBlk_4pix_even_dl[cp][c] <= cscBlk[cp][0][c+2];
+        endcase
       else
         for (c=0; c<4; c=c+1)
           cscBlk_4pix_even_dl[cp][c] <= cscBlk[cp][0][c+4];
@@ -192,12 +198,18 @@ reg [13:0] cscBlk_8pix_odd_dl [2:0][2:0][7:0]; // save the 8 odd row pixels that
 always @ (posedge clk) begin
   if (cscBlk_valid)
     for (cp=0; cp<3; cp=cp+1)
-      if ((chroma_format > 2'd0) & (cp > 0))
-        for (c=0; c<4; c=c+1)
-          if (c < 2)
-            cscBlk_8pix_odd_dl[0][cp][c] <= cscBlk[cp][1][c];
-          else
-            cscBlk_8pix_odd_dl[0][cp][2+c] <= cscBlk[cp][1][c];
+      if (cp > 0)
+        case (chroma_format)
+          2'd0: 
+            for (c=0; c<8; c=c+1)
+              cscBlk_8pix_odd_dl[0][cp][c] <= cscBlk[cp][1][c];
+          2'd1, 2'd2:
+            for (c=0; c<4; c=c+1)
+              if (c < 2)
+                cscBlk_8pix_odd_dl[0][cp][c] <= cscBlk[cp][1][c];
+              else
+                cscBlk_8pix_odd_dl[0][cp][2+c] <= cscBlk[cp][1][c];
+        endcase
       else
         for (c=0; c<8; c=c+1)
           cscBlk_8pix_odd_dl[0][cp][c] <= cscBlk[cp][1][c];

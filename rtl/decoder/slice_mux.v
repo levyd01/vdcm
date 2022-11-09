@@ -24,6 +24,7 @@ module slice_mux
   
   output reg [4*3*14-1:0] pixs_out,
   output reg [3:0] pixs_out_valid,
+  output reg pixs_out_eol,
   output reg pixs_out_eof
 );
 
@@ -89,6 +90,18 @@ always @ (posedge clk_out_int or negedge rst_n)
     eof_rd <= 1'b0;
   else if (rd_eoc[slices_per_line-1] & (line_cnt_until_eof >= frame_height - 1'b1) & mem_rd_en[slices_per_line-1])
     eof_rd <= 1'b1;
+    
+reg eol_rd;
+always @ (posedge clk_out_int or negedge rst_n)
+  if (~rst_n)
+    eol_rd <= 1'b0;
+  else if (mem_rd_sof[0])
+    eol_rd <= 1'b0;
+  else if (rd_eoc[slices_per_line-1] & mem_rd_en[slices_per_line-1])
+    eol_rd <= 1'b1;
+  else
+    eol_rd <= 1'b0;
+
 
 parameter ADDR_WIDTH = $clog2(((MAX_SLICE_WIDTH>>2))+4);
 
@@ -233,6 +246,7 @@ always @ (posedge clk_out_int or negedge rst_n)
 always @ (posedge clk_out_int) begin
   pixs_out <= mem_rd_data[mem_rd_sel_dl[0]];
   pixs_out_eof <= eof_rd;
+  pixs_out_eol <= eol_rd;
 end
 
 wire [13:0] pixs_out_unpacked [2:0][3:0];

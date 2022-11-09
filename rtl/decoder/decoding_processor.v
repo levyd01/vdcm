@@ -175,6 +175,7 @@ bp_mode bp_mode_u
   
   .substreams123_parsed         (substreams123_parsed),
   .sos                          (sos),
+  .soc                          (soc),
   .fbls                         (fbls),
   .masterQp                     (masterQp),
   .masterQp_valid               (masterQp_valid | first_header_of_slice),

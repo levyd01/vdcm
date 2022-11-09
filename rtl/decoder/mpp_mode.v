@@ -166,7 +166,7 @@ parameter MODE_MPP       = 3'd2;
 parameter MODE_MPPF      = 3'd3;
 
 reg [3:0] stepSize [2:0];
-reg [1:0] compBits [2:0];
+reg [3:0] compBits [2:0];
 
 wire [1:0] bitsPerCompA [2:0];
 assign bitsPerCompA[0] = 2'd1;
@@ -180,7 +180,7 @@ assign bitsPerCompB[2] = 2'd1;
 
 always @ (*)
   for (c = 0; c < 3; c = c + 1) begin
-    compBits[c] = 2'd0; // default
+    compBits[c] = 4'd0; // default
     if (blockMode == MODE_MPP) begin
       if ((blockCsc == 2'd1) & (c > 0)) begin
         if (c == 1)

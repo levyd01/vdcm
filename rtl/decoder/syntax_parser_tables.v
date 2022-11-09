@@ -121,6 +121,27 @@ assign  transformEcgMappingLastSigPos_422[7][1] = 3'd7;
 assign  transformEcgMappingLastSigPos_422[7][2] = 3'd0;
 assign  transformEcgMappingLastSigPos_422[7][3] = 3'd0;
 
+wire [2:0] transformEcgMappingLastSigPos_420 [3:0][3:0];
+assign  transformEcgMappingLastSigPos_420[0][0] = 3'd1;
+assign  transformEcgMappingLastSigPos_420[0][1] = 3'd0;
+assign  transformEcgMappingLastSigPos_420[0][2] = 3'd0;
+assign  transformEcgMappingLastSigPos_420[0][3] = 3'd0;
+  
+assign  transformEcgMappingLastSigPos_420[1][0] = 3'd2;
+assign  transformEcgMappingLastSigPos_420[1][1] = 3'd0;
+assign  transformEcgMappingLastSigPos_420[1][2] = 3'd0;
+assign  transformEcgMappingLastSigPos_420[1][3] = 3'd0;
+  
+assign  transformEcgMappingLastSigPos_420[2][0] = 3'd3;
+assign  transformEcgMappingLastSigPos_420[2][1] = 3'd2;
+assign  transformEcgMappingLastSigPos_420[2][2] = 3'd0;
+assign  transformEcgMappingLastSigPos_420[2][3] = 3'd0;
+        
+assign  transformEcgMappingLastSigPos_420[3][0] = 3'd4;
+assign  transformEcgMappingLastSigPos_420[3][1] = 3'd0;
+assign  transformEcgMappingLastSigPos_420[3][2] = 3'd0;
+assign  transformEcgMappingLastSigPos_420[3][3] = 3'd0;
+
 
 wire [3:0] ecIndexMapping_Transform_8x2[15:0];
 assign  ecIndexMapping_Transform_8x2[0] = 4'd0;

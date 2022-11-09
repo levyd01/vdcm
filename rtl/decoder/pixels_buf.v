@@ -50,7 +50,7 @@ wire signed [13:0] pReconBlk [2:0][1:0][7:0];
 generate
   for (cpi=0; cpi<3; cpi=cpi+1) begin : gen_pReconBlk_cpi
     for (gr=0; gr<2; gr=gr+1) begin : gen_pReconBlk_gr
-      for (gc=0; gc<8; gc=gc+1)  begin : gen_pReconBlk_gc // TBD 4:2:2 and 4:2:0
+      for (gc=0; gc<8; gc=gc+1)  begin : gen_pReconBlk_gc
         assign pReconBlk[cpi][gr][gc] = pReconBlk_p[(cpi*16+gr*8+gc)*14+:14];
       end
     end
@@ -63,8 +63,8 @@ wire signed [13:0] src_cg [7:0];
 generate
   for (gc=0; gc<8; gc=gc+1) begin // TBD 4:2:2 and 4:2:0
     assign src_y [gc] = pReconBlk[0][1][gc];
-    assign src_co[gc] = pReconBlk[1][1][gc];
-    assign src_cg[gc] = pReconBlk[2][1][gc];
+    assign src_co[gc] = (chroma_format < 2'd2) ? pReconBlk[1][1][gc] : pReconBlk[1][0][gc];
+    assign src_cg[gc] = (chroma_format < 2'd2) ? pReconBlk[2][1][gc] : pReconBlk[2][0][gc];
   end
 endgenerate
 
@@ -95,8 +95,8 @@ always @ (posedge clk)
       for (ci=0; ci<8; ci=ci+1)
         case(cp)
           2'd0: rgb_reg[0][ci] <= (csc == 2'd1) ? dst_r[ci] : pReconBlk[0][1][ci];
-          2'd1: rgb_reg[1][ci] <= (csc == 2'd1) ? dst_g[ci] : pReconBlk[1][1][ci];
-          2'd2: rgb_reg[2][ci] <= (csc == 2'd1) ? dst_b[ci] : pReconBlk[2][1][ci];
+          2'd1: rgb_reg[1][ci] <= (csc == 2'd1) ? dst_g[ci] : ((chroma_format < 2'd2) ? pReconBlk[1][1][ci] : pReconBlk[1][0][ci]);
+          2'd2: rgb_reg[2][ci] <= (csc == 2'd1) ? dst_b[ci] : ((chroma_format < 2'd2) ? pReconBlk[2][1][ci] : pReconBlk[2][0][ci]);
         endcase
 
 reg [6:0] pReconBlk_valid_dl;

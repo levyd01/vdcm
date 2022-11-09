@@ -417,7 +417,31 @@ always @ (*) begin : proc_parser_0
                     bit_pointer[0] = bit_pointer[0] + mppQuantBits_0[c];
                     mppNextBlockQuant[c][s] = $signed({1'b0, val}) - (17'sd1 << (mppQuantBits_0[c] - 1'b1));
                   end
-              // 4:2:0 TBD              
+              // 4:2:0
+              2'd2:
+                if (c == 0)
+                  for (s = 0; s < 6; s = s + 1) begin // See g_mppSsmMapping_420 in C
+                    case(mppQuantBits_0[c])
+                      4'd1: val = data_to_be_parsed[0][bit_pointer[0]];
+                      4'd2: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:2], 2);
+                      4'd3: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:3], 3);
+                      4'd4: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:4], 4);
+                      4'd5: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:5], 5);
+                      4'd6: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:6], 6);
+                      4'd7: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:7], 7);
+                      4'd8: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:8], 8);
+                      4'd9: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:9], 9);
+                      4'd10: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:10], 10);
+                      4'd11: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:11], 11);
+                      4'd12: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:12], 12);
+                      4'd13: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:13], 13);
+                      4'd14: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:14], 14);
+                      4'd15: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:15], 15);
+                      4'd16: val = BitReverse(data_to_be_parsed[0][bit_pointer[0]+:16], 16);
+                    endcase
+                    bit_pointer[0] = bit_pointer[0] + mppQuantBits_0[c];
+                    mppNextBlockQuant[c][s] = $signed({1'b0, val}) - (17'sd1 << (mppQuantBits_0[c] - 1'b1));
+                  end
             endcase
           end
         end
@@ -509,7 +533,8 @@ reg signed [16:0] compEcgCoeff [2:0][15:0]; // TBD bit width of each element of 
 reg [3:0] signSigPos;
 reg [15:0] signBitValid [2:0];
 parameter [4*4-1:0] ecTransformEcgStart_444 = 16'h0914;
-parameter [4*4-1:0] ecTransformEcgStart_420 = 16'h0010;
+parameter [4*4-1:0] ecTransformEcgStart_422 = 16'h0010;
+parameter [4*4-1:0] ecTransformEcgStart_420 = 16'h0000;
 reg [3:0] groupSkipActive [2:0]; // boolean per ECG (4) and per ssm, excluding ssm 0 (3)
 reg [3:0] prefix [2:0][3:0];
 reg uiBits;
@@ -682,7 +707,123 @@ always @ (*) begin : proc_parser_123
             bit_pointer[curSubstream] = bit_pointer[curSubstream] + mppQuantBits_X[c];
             pQuant[c][s] = $signed({1'b0, val}) - (17'sd1 << (mppQuantBits_X[c] - 1'b1));
           end
-        // 4:2:0 TBD              
+        // 4:2:0
+        2'd2:
+          if (curSubstream == 1) // See g_mppSsmMapping_420 in C
+            for (s = 6; s < 12; s = s + 1) begin // component 0
+              case(mppQuantBits_X[0])
+                4'd1: val = data_to_be_parsed[curSubstream][bit_pointer[curSubstream]];
+                4'd2: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:2], 2);
+                4'd3: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:3], 3);
+                4'd4: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:4], 4);
+                4'd5: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5);
+                4'd6: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
+                4'd7: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:7], 7);
+                4'd8: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:8], 8);
+                4'd9: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:9], 9);
+                4'd10: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:10], 10);
+                4'd11: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:11], 11);
+                4'd12: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:12], 12);
+                4'd13: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:13], 13);
+                4'd14: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:14], 14);
+                4'd15: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:15], 15);
+                4'd16: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:16], 16);
+              endcase
+              bit_pointer[curSubstream] = bit_pointer[curSubstream] + mppQuantBits_X[0];
+              pQuant[0][s] = $signed({1'b0, val}) - (17'sd1 << (mppQuantBits_X[0] - 1'b1));
+            end
+          else if (curSubstream == 2) begin // See g_mppSsmMapping_420 in C
+            for (s = 12; s < 16; s = s + 1) begin // component 0
+              case(mppQuantBits_X[0])
+                4'd1: val = data_to_be_parsed[curSubstream][bit_pointer[curSubstream]];
+                4'd2: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:2], 2);
+                4'd3: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:3], 3);
+                4'd4: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:4], 4);
+                4'd5: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5);
+                4'd6: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
+                4'd7: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:7], 7);
+                4'd8: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:8], 8);
+                4'd9: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:9], 9);
+                4'd10: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:10], 10);
+                4'd11: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:11], 11);
+                4'd12: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:12], 12);
+                4'd13: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:13], 13);
+                4'd14: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:14], 14);
+                4'd15: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:15], 15);
+                4'd16: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:16], 16);
+              endcase
+              bit_pointer[curSubstream] = bit_pointer[curSubstream] + mppQuantBits_X[0];
+              pQuant[0][s] = $signed({1'b0, val}) - (17'sd1 << (mppQuantBits_X[0] - 1'b1));
+            end
+            for (s = 0; s < 2; s = s + 1) begin // component 1
+              case(mppQuantBits_X[1])
+                4'd1: val = data_to_be_parsed[curSubstream][bit_pointer[curSubstream]];
+                4'd2: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:2], 2);
+                4'd3: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:3], 3);
+                4'd4: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:4], 4);
+                4'd5: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5);
+                4'd6: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
+                4'd7: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:7], 7);
+                4'd8: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:8], 8);
+                4'd9: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:9], 9);
+                4'd10: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:10], 10);
+                4'd11: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:11], 11);
+                4'd12: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:12], 12);
+                4'd13: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:13], 13);
+                4'd14: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:14], 14);
+                4'd15: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:15], 15);
+                4'd16: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:16], 16);
+              endcase
+              bit_pointer[curSubstream] = bit_pointer[curSubstream] + mppQuantBits_X[1];
+              pQuant[1][s] = $signed({1'b0, val}) - (17'sd1 << (mppQuantBits_X[1] - 1'b1));
+            end
+          end
+          else begin // curSubstream = 3. See g_mppSsmMapping_420 in C
+            for (s = 2; s < 4; s = s + 1) begin // component 1
+              case(mppQuantBits_X[1])
+                4'd1: val = data_to_be_parsed[curSubstream][bit_pointer[curSubstream]];
+                4'd2: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:2], 2);
+                4'd3: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:3], 3);
+                4'd4: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:4], 4);
+                4'd5: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5);
+                4'd6: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
+                4'd7: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:7], 7);
+                4'd8: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:8], 8);
+                4'd9: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:9], 9);
+                4'd10: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:10], 10);
+                4'd11: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:11], 11);
+                4'd12: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:12], 12);
+                4'd13: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:13], 13);
+                4'd14: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:14], 14);
+                4'd15: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:15], 15);
+                4'd16: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:16], 16);
+              endcase
+              bit_pointer[curSubstream] = bit_pointer[curSubstream] + mppQuantBits_X[1];
+              pQuant[1][s] = $signed({1'b0, val}) - (17'sd1 << (mppQuantBits_X[1] - 1'b1));
+            end
+            for (s = 0; s < 4; s = s + 1) begin // component 2
+              case(mppQuantBits_X[2])
+                4'd1: val = data_to_be_parsed[curSubstream][bit_pointer[curSubstream]];
+                4'd2: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:2], 2);
+                4'd3: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:3], 3);
+                4'd4: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:4], 4);
+                4'd5: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:5], 5);
+                4'd6: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:6], 6);
+                4'd7: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:7], 7);
+                4'd8: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:8], 8);
+                4'd9: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:9], 9);
+                4'd10: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:10], 10);
+                4'd11: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:11], 11);
+                4'd12: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:12], 12);
+                4'd13: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:13], 13);
+                4'd14: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:14], 14);
+                4'd15: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:15], 15);
+                4'd16: val = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:16], 16);
+              endcase
+              bit_pointer[curSubstream] = bit_pointer[curSubstream] + mppQuantBits_X[2];
+              pQuant[2][s] = $signed({1'b0, val}) - (17'sd1 << (mppQuantBits_X[2] - 1'b1));
+            end
+          end
       endcase
     end
     if ((curBlockMode_r == MODE_TRANSFORM) | (curBlockMode_r == MODE_BP)) begin // DecodeResiduals in C
@@ -750,14 +891,14 @@ always @ (*) begin : proc_parser_123
                   curEcgEnd[c][ecgIdx] = curEcgStart[ecgIdx] + transformEcgMappingLastSigPos_444[lastSigPos[c]][ecgIdx];
                 end
                 else if (chroma_format == 2'd1) begin // 4:2:2
-                  curEcgStart[ecgIdx] = ecTransformEcgStart_420[ecgIdx*4+:4];
+                  curEcgStart[ecgIdx] = ecTransformEcgStart_422[ecgIdx*4+:4];
                   curEcgEnd[c][ecgIdx] = curEcgStart[ecgIdx] + transformEcgMappingLastSigPos_422[lastSigPos[c]][ecgIdx];
                 end
-                // else 4:2:0 TBD
-                if (curEcgEnd[c][ecgIdx] > {2'b0, curEcgStart[ecgIdx]})
-                  ecgDataActive[c][ecgIdx] = 1'b1;
-                else
-                  ecgDataActive[c][ecgIdx] = 1'b0;
+                else begin // 4:2:0
+                  curEcgStart[ecgIdx] = ecTransformEcgStart_420[ecgIdx*4+:4];
+                  curEcgEnd[c][ecgIdx] = curEcgStart[ecgIdx] + transformEcgMappingLastSigPos_420[lastSigPos[c]][ecgIdx];
+                end
+                ecgDataActive[c][ecgIdx] = ((c==0) | (ecgIdx < maxChromaEcgIdx)) ? (curEcgEnd[c][ecgIdx] != {2'b0, curEcgStart[ecgIdx]}) : 1'b0;
               end
           endcase
         // ecg: data
@@ -1008,7 +1149,15 @@ always @ (posedge clk or negedge rst_n)
                     pQuant_r[c][s] <= pQuant[c][s];
                 else
                   pQuant_r[c][s] <= pQuant[c][s];
-              // 4:2:0 TBD
+              // 4:2:0
+              2'd2:
+                if (c == 0) // See g_mppSsmMapping_420 in C
+                  if (s < 6)
+                    pQuant_r[c][s] <= mppBlockQuant_r[0][s];
+                  else
+                    pQuant_r[c][s] <= pQuant[0][s];
+                else
+                  pQuant_r[c][s] <= pQuant[c][s];
             endcase
           else
             pQuant_r[c][s] <= pQuant[c][s];

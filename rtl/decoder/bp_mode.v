@@ -21,6 +21,7 @@ module bp_mode
   
   input wire fbls, // First line of slice
   input wire substreams123_parsed,
+  input wire soc,
   input wire sos,
   input wire signed [7:0] masterQp,
   input wire masterQp_valid,
@@ -88,13 +89,12 @@ generate
         always @ (*)
           case (chroma_format)
             2'd0: pQuant[ci][rowi][coli] = pQuant_p[(ci*8*2 + rowi*8 + coli)*17+:17];
-            2'd1: // 4:2:2
+            2'd1, 2'd2: // 4:2:2 and 4:2:0
               begin
                 pQuant[0][rowi][coli] = pQuant_p[(rowi*8 + coli)*17+:17];
                 pQuant[1][rowi][coli] = pQuant_p[(16 + rowi*4 + coli)*17+:17];
                 pQuant[2][rowi][coli] = pQuant_p[(32 + rowi*4 + coli)*17+:17];
               end
-            // 2'd2: 4:2:0 TBD
             default: pQuant[ci][rowi][coli] = pQuant_p[(ci*8*2 + rowi*8 + coli)*17+:17];
           endcase 
       end
@@ -111,6 +111,15 @@ generate
     assign bpv2x1_sel[bi][1] = bpv2x1_sel_p[7*(bi*2+1)+:7];
   end
 endgenerate
+
+reg soc_dl;
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    soc_dl <= 1'b1;
+  else if (flush)
+    soc_dl <= 1'b1;
+  else if (qp_valid)
+    soc_dl <= soc;
 
 integer c;
 integer col;

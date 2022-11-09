@@ -26,6 +26,7 @@ module vdcm_decoder
   input wire in_data_is_pps, // in_data contains PPS before in_sof
   
   output wire [4*3*14-1:0] pixs_out,
+  output wire pixs_out_eol,
   output wire pixs_out_eof,
   output wire [3:0] pixs_out_valid
 );
@@ -361,6 +362,7 @@ slice_mux_u
   
   .pixs_out                     (pixs_out),
   .pixs_out_valid               (pixs_out_valid),
+  .pixs_out_eol                 (pixs_out_eol),
   .pixs_out_eof                 (pixs_out_eof)
 );
   

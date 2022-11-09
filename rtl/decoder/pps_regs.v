@@ -221,21 +221,31 @@ always @ (posedge clk)
     
 // Derived parameters
 integer c;
-parameter [3*3-1:0] compScaleX = 9'b110110000;
-parameter [3*3-1:0] compScaleY = 9'b100100000;
+localparam [3*3-1:0] compScaleX = 9'b110110000;
+localparam [3*3-1:0] compScaleY = 9'b100100000;
+wire [2:0] compNumSamplesShift [2:0][2:0];
+assign compNumSamplesShift[0][0] = 2'd0;
+assign compNumSamplesShift[1][0] = 2'd0;
+assign compNumSamplesShift[2][0] = 2'd0;
+assign compNumSamplesShift[0][1] = 2'd0;
+assign compNumSamplesShift[1][1] = 2'd1;
+assign compNumSamplesShift[2][1] = 2'd1;
+assign compNumSamplesShift[0][2] = 2'd0;
+assign compNumSamplesShift[1][2] = 2'd2;
+assign compNumSamplesShift[2][2] = 2'd2;
 reg [1:0] blkHeight [2:0];
 reg [3:0] blkWidth [2:0];
 reg [4:0] neighborsAboveLenAdjusted [2:0];
 reg [4:0] compNumSamples [2:0];
 reg [1:0] partitionSize [2:0];
 always @ (*) begin
-    for (c=0; c<3; c=c+1)
+    for (c=0; c<3; c=c+1) begin
       case(chroma_format)
         2'd0: // 4:4:4
           begin
             blkWidth[c] = 4'd8 >> compScaleX[c*3+0];
             blkHeight[c] = 2'd2 >> compScaleY[c*3+0];
-            compNumSamples[c] = 5'd16 >> (compScaleX[c*3+0] + compScaleY[c*3+0]);
+            compNumSamples[c] = 5'd16 >> compNumSamplesShift[c][0];
             neighborsAboveLenAdjusted[c] = 5'd16 >> compScaleX[c*3+0];
             partitionSize[c] = 2'd2 >> compScaleX[c*3+0];
           end
@@ -243,15 +253,15 @@ always @ (*) begin
           begin
             blkWidth[c] = 4'd8 >> compScaleX[c*3+1];
             blkHeight[c] = 2'd2 >> compScaleY[c*3+1];
-            compNumSamples[c] = 5'd16 >> (compScaleX[c*3+1] + compScaleY[c*3+1]);
+            compNumSamples[c] = 5'd16 >> compNumSamplesShift[c][1];
             neighborsAboveLenAdjusted[c] = 5'd16 >> compScaleX[c*3+1];
             partitionSize[c] = 2'd2 >> compScaleX[c*3+1];
           end
-        2'd2:
+        2'd2: // 4:2:0
           begin
             blkWidth[c] = 4'd8 >> compScaleX[c*3+2];
             blkHeight[c] = 2'd2 >> compScaleY[c*3+2];
-            compNumSamples[c] = 5'd16 >> (compScaleX[c*3+2] + compScaleY[c*3+2]);
+            compNumSamples[c] = 5'd16 >> compNumSamplesShift[c][2];
             neighborsAboveLenAdjusted[c] = 5'd16 >> compScaleX[c*3+2];
             partitionSize[c] = 2'd2 >> compScaleX[c*3+2];
           end
@@ -264,6 +274,7 @@ always @ (*) begin
             partitionSize[c] = 2'd2 >> compScaleX[c*3+0];
           end
       endcase 
+    end
     case (bits_per_component_coded)
       2'd0: midPoint = 1'b1 << 7;
       2'd1: midPoint = 1'b1 << 9;
