@@ -212,7 +212,7 @@ always @ (posedge clk_out_int or negedge rst_n)
     odd_line <= 1'b0;
   else if (flush)
     odd_line <= 1'b0;
-  else if (pixs_out_valid & pixs_out_eol)
+  else if (/*pixs_out_valid & */pixs_out_eol)
     odd_line <= ~odd_line;
 
 integer CompBitWidth; 
@@ -269,20 +269,24 @@ initial begin
   //output_image_textfile = $fopen("output_image_textfile.yuv", "w");
 end
 
+integer num_valid_pixs;
+always @ (pixs_out_valid)
+    num_valid_pixs = $clog2(pixs_out_valid+1);
+
 integer luma_array_idx = 0;
 integer chroma_array_index = 0;
 always @ (negedge clk_out_int)
   if (~pixs_out_eof_dl & (image_file_extension == "yuv"))
-    for (c=0; c<4; c=c+1)
+    for (c=0; c<num_valid_pixs; c=c+1)
       if (pixs_out_valid[c]) begin
         y_array[luma_array_idx] = pixs_out_unpacked[c][0];
         luma_array_idx = luma_array_idx + 1;
-        if ((uut.chroma_format == 1) & (c < 2)) begin // 4:2:2
+        if ((uut.chroma_format == 1) & (c < (num_valid_pixs>>1))) begin // 4:2:2
           u_array[chroma_array_index] = pixs_out_unpacked[c][1];
           v_array[chroma_array_index] = pixs_out_unpacked[c][2];
           chroma_array_index = chroma_array_index + 1;
         end
-        else if ((uut.chroma_format == 2) & ~odd_line & (c < 2)) begin  // In 4:2:0, there are no chroma components on odd rows.
+        else if ((uut.chroma_format == 2) & ~odd_line & (c < (num_valid_pixs>>1))) begin  // In 4:2:0, there are no chroma components on odd rows.
           u_array[chroma_array_index] = pixs_out_unpacked[c][1];
           //$fwrite(output_image_textfile, "u_array[%0d] = %d\n", chroma_array_index, u_array[chroma_array_index]);
           v_array[chroma_array_index] = pixs_out_unpacked[c][2];
