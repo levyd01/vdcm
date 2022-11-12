@@ -21,6 +21,9 @@ module out_sync_buf
   output wire empty,
   output wire fifo_almost_full, // Stall reading from RC buffer (in substream demux) to avoid overflow in out_sync_buf FIFO.
   
+  output reg fifo_almost_full_rd_clk,
+  output reg fifo_almost_empty_rd_clk,
+  
   output wire [DATA_WIDTH-1:0] out_data,
   output wire out_valid,
   output wire out_sof
@@ -136,11 +139,14 @@ always @ (posedge clk_rd or negedge rst_n)
     fifo_fullness <= fifo_size - ram_addr_r + ram_addr_w_rd_clk_domain;
 wire [ADDR_WIDTH-2:0] almost_full_thres;
 assign almost_full_thres = fifo_size - 7'd64;
-reg fifo_almost_full_rd_clk;
 always @ (posedge clk_rd)
   fifo_almost_full_rd_clk <= fifo_fullness > almost_full_thres;
 synchronizer sync_fifo_almost_full (.clk(clk_wr), .in(fifo_almost_full_rd_clk), .out(fifo_almost_full));
-   
+
+wire [ADDR_WIDTH-2:0] almost_empty_thres;
+assign almost_empty_thres = 7'd64;
+always @ (posedge clk_rd)
+  fifo_almost_empty_rd_clk <= fifo_fullness < almost_empty_thres;
 
 wire [DATA_WIDTH-1:0] rd_data;
 wire mem_valid;

@@ -161,6 +161,8 @@ initial begin
   
 end
   
+
+wire pixs_out_sof;
 wire [4*3*14-1:0] pixs_out;
 wire [3:0] pixs_out_valid;
 wire pixs_out_eof; //stop writing to file after the last 4 pixels of the frame
@@ -186,6 +188,7 @@ uut
   .in_sof               (in_sof),  // Start of frame
   .in_data_is_pps       (in_data_is_pps), // in_data contains PPS before in_sof
   
+  .pixs_out_sof         (pixs_out_sof),
   .pixs_out             (pixs_out),
   .pixs_out_eol         (pixs_out_eol),
   .pixs_out_eof         (pixs_out_eof),

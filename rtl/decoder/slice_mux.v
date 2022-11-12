@@ -22,6 +22,7 @@ module slice_mux
   input wire [MAX_NBR_SLICES-1:0] pixs_in_sof,
   input wire [MAX_NBR_SLICES-1:0] pixs_in_valid,
   
+  output reg pixs_out_sof,
   output reg [4*3*14-1:0] pixs_out,
   output reg [3:0] pixs_out_valid,
   output reg pixs_out_eol,
@@ -111,6 +112,76 @@ always @ (posedge clk_out_int or negedge rst_n) begin
   mem_rd_sel_dl[1] <= mem_rd_sel_dl[0];
 end
 
+wire [MAX_NBR_SLICES-1:0] fifo_almost_empty_clk_int;
+reg [5:0] intervalDesired;
+always @ (*)
+  case (slices_per_line[3:0])
+    4'd1: intervalDesired = 6'd16;
+    4'd2: intervalDesired = 6'd8;
+    4'd3, 4'd4: intervalDesired = 6'd4;
+    4'd5, 4'd6, 4'd7, 4'd8: intervalDesired = 6'd2;
+    default: intervalDesired = 6'd16;
+  endcase
+reg [5:0] intervalActual;
+always @ (posedge clk_out_int or negedge rst_n)
+  if (~rst_n)
+    intervalActual <= 6'd0;
+  else if (fifo_almost_empty_clk_int[mem_rd_sel])
+    intervalActual <= intervalDesired << 1;
+  else
+    intervalActual <= intervalDesired;
+
+wire [MAX_NBR_SLICES-1:0] fifo_almost_full_clk_int;
+reg [7:0] intervalCnt;
+always @ (posedge clk_out_int or negedge rst_n)
+  if (~rst_n)
+    intervalCnt <= 8'd0;
+  else if (pixs_out_eof)
+    intervalCnt <= 8'd0;
+  else if (intervalCnt >= intervalActual - 1'b1)
+    intervalCnt <= 8'd0;
+  else if (fifo_almost_full_clk_int[mem_rd_sel])
+    intervalCnt <= intervalCnt + 2'd2;
+  else
+    intervalCnt <= intervalCnt + 1'b1;
+
+reg enableInitDelay;
+always @ (posedge clk_out_int or negedge rst_n)
+  if (~rst_n)
+    enableInitDelay <= 1'b0;
+  else if (pixs_out_sof)
+    enableInitDelay <= 1'b1;
+  else if (pixs_out_eof)
+    enableInitDelay <= 1'b0;
+    
+localparam INIT_DELAY_BEFORE_RD = 64;
+reg enableStartRd;
+reg [9:0] initDelayCnt;
+always @ (posedge clk_out_int or negedge rst_n)
+  if (~rst_n) begin
+    initDelayCnt <= 10'd0;
+    enableStartRd <= 1'b0;
+  end
+  else if (pixs_out_sof | pixs_out_eof) begin
+    initDelayCnt <= 10'd0;
+    enableStartRd <= 1'b0;
+  end
+  else if (enableInitDelay)
+    if (initDelayCnt < INIT_DELAY_BEFORE_RD) begin
+      initDelayCnt <= initDelayCnt + 1'b1;
+      enableStartRd <= 1'b0;
+    end
+    else
+      enableStartRd <= 1'b1;
+  
+reg enable_rd;
+always @ (posedge clk_out_int or negedge rst_n)
+  if (~rst_n)
+    enable_rd <= 1'b0;
+  else if (intervalCnt >= intervalActual - 1'b1)
+    enable_rd <= 1'b1;
+  else
+    enable_rd <= 1'b0;
 
 integer m;
 genvar gn;
@@ -158,7 +229,7 @@ generate
           rd_eoc[gs] <= 1'b0;
     
     
-    assign mem_rd_en[gs] = (mem_rd_sel == gs) & ~mem_empty[gs];
+    assign mem_rd_en[gs] = (mem_rd_sel == gs) & enableStartRd & enable_rd & ~mem_empty[gs];
     
     out_sync_buf 
       #(
@@ -177,6 +248,8 @@ generate
         .in_valid                     (pixs_in_valid[gs]),
         .empty                        (mem_empty[gs]),
         .fifo_almost_full             (fifo_almost_full[gs]),
+        .fifo_almost_full_rd_clk      (fifo_almost_full_clk_int[gs]),
+        .fifo_almost_empty_rd_clk     (fifo_almost_empty_clk_int[gs]),
         .out_rd_en                    (mem_rd_en[gs]),
         .out_data                     (mem_rd_data[gs]),
         .out_sof                      (mem_rd_sof[gs]),
@@ -244,6 +317,7 @@ always @ (posedge clk_out_int or negedge rst_n)
     pixs_out_valid <= 4'b0;
  
 always @ (posedge clk_out_int) begin
+  pixs_out_sof <= mem_rd_sof[0];
   pixs_out <= mem_rd_data[mem_rd_sel_dl[0]];
   pixs_out_eof <= eof_rd;
   pixs_out_eol <= eol_rd;
