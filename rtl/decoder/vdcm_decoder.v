@@ -9,7 +9,7 @@
 module vdcm_decoder
 #(
   parameter MAX_NBR_SLICES          = 2,
-  parameter MAX_BPC                 = 16,   // Max bits-per-color internally used by the DSC Decoder
+  parameter PPS_INPUT_METHOD        = "IN_BAND", // "IN_BAND", "DIRECT", "APB"
   parameter MAX_SLICE_WIDTH         = 2560,
   parameter MAX_SLICE_HEIGHT        = 2560
 )
@@ -23,7 +23,10 @@ module vdcm_decoder
   input wire [255:0] in_data,
   input wire in_valid,
   input wire in_sof,              // Start of frame
-  input wire in_data_is_pps, // in_data contains PPS before in_sof
+  input wire in_eof,              // End of frame
+  input wire in_data_is_pps, // in_data contains PPS before in_sof in IN_BAND method
+  input wire [1023:0] in_pps, // contains PPS in DIRECT method
+  input wire in_pps_valid, // in_pps is valid. Clocked by clk_core
   
   output wire pixs_out_sof,
   output wire [4*3*14-1:0] pixs_out,
@@ -35,6 +38,7 @@ module vdcm_decoder
 wire sync_buf_valid;
 wire [255:0] sync_buf_data;
 wire sync_buf_sof;
+wire sync_buf_eof;
 wire sync_buf_data_is_pps;
 
 // Sync buffer
@@ -52,10 +56,12 @@ input_sync_buf_u
   .flush                        (flush),
   .in_data                      (in_data),
   .in_sof                       (in_sof),
+  .in_eof                       (in_eof),
   .in_valid                     (in_valid),
   .in_data_is_pps               (in_data_is_pps),
   .out_data                     (sync_buf_data),
   .out_sof                      (sync_buf_sof),
+  .out_eof                      (sync_buf_eof),
   .out_data_is_pps              (sync_buf_data_is_pps),
   .out_valid                    (sync_buf_valid)
   
@@ -126,8 +132,11 @@ wire [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-4-1:0] rcOffsetThreshold;
 wire [4:0] OffsetAtBeginOfSlice;
 wire [34:0] sliceSizeInRamInBytes;
 
+wire pixs_out_eof_clk_core;
+
 pps_regs 
 #(
+  .PPS_INPUT_METHOD        (PPS_INPUT_METHOD),
   .MAX_SLICE_WIDTH         (MAX_SLICE_WIDTH),
   .MAX_SLICE_HEIGHT        (MAX_SLICE_HEIGHT)
 )
@@ -140,6 +149,11 @@ pps_regs_u
   .in_data                        (sync_buf_data),
   .in_valid                       (sync_buf_valid),
   .data_in_is_pps                 (sync_buf_data_is_pps),
+  
+  .in_sof                         (sync_buf_sof),
+  .in_eof                         (pixs_out_eof_clk_core),
+  .in_pps                         (in_pps),
+  .in_pps_valid                   (in_pps_valid),
                                 
   .version_minor                  (version_minor),
   .frame_width                    (frame_width),
@@ -254,8 +268,7 @@ generate
     slice_decoder
     #(
       .MAX_SLICE_WIDTH         (MAX_SLICE_WIDTH),
-      .MAX_SLICE_HEIGHT        (MAX_SLICE_HEIGHT),
-      .MAX_BPC                 (MAX_BPC)
+      .MAX_SLICE_HEIGHT        (MAX_SLICE_HEIGHT)
     )
     slice_decoder_u
     (
@@ -365,7 +378,8 @@ slice_mux_u
   .pixs_out                     (pixs_out),
   .pixs_out_valid               (pixs_out_valid),
   .pixs_out_eol                 (pixs_out_eol),
-  .pixs_out_eof                 (pixs_out_eof)
+  .pixs_out_eof                 (pixs_out_eof),
+  .pixs_out_eof_clk_core        (pixs_out_eof_clk_core)
 );
   
 

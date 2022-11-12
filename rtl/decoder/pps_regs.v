@@ -8,6 +8,7 @@
 
 module pps_regs
 #(
+  parameter PPS_INPUT_METHOD        = "IN_BAND", // "IN_BAND", "DIRECT", "APB"
   parameter MAX_SLICE_WIDTH         = 2560,
   parameter MAX_SLICE_HEIGHT        = 2560
 )
@@ -18,7 +19,11 @@ module pps_regs
   
   input wire [255:0] in_data,
   input wire in_valid,
+  input wire in_sof,
+  input wire in_eof,
   input wire data_in_is_pps,
+  input wire [1023:0] in_pps, // contains PPS in DIRECT method
+  input wire in_pps_valid, // in_pps is valid. Clocked by clk_core
   
   output reg [1:0] version_minor,
   output reg [15:0] frame_width,
@@ -96,12 +101,35 @@ always @ (posedge clk or negedge rst_n)
     
 wire [255:0] in_data_gated;
 assign in_data_gated = data_in_is_pps ? in_data : 256'b0;
+
+reg in_eof_dl;
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    in_eof_dl <= 1'b0;
+  else
+    in_eof_dl <= in_eof;
+    
+reg inside_frame;
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    inside_frame <= 1'b0;
+  else if (in_sof)
+    inside_frame <= 1'b1;
+  else if (in_eof)
+    inside_frame <= 1'b0;
+
+reg [1:0] in_pps_valid_dl;    
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    in_pps_valid_dl <= 2'b0;
+  else
+    in_pps_valid_dl <= {in_pps_valid_dl[0], in_pps_valid};
     
 reg pps_valid_i;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     pps_valid_i <= 1'b0;
-  else if ((line_cnt == 2'd3) & in_valid)
+  else if (((line_cnt == 2'd3) & in_valid) | ((~inside_frame & in_pps_valid_dl[0]) | in_eof))
     pps_valid_i <= 1'b1;
   else
     pps_valid_i <= 1'b0;
@@ -111,113 +139,204 @@ always @ (posedge clk or negedge rst_n)
     pps_valid <= 1'b0;
   else
     pps_valid <= pps_valid_i;
-    
+
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     line_cnt <= 2'd0;
   else if (data_in_is_pps & in_valid)
     line_cnt <= line_cnt + 1'b1;
-
+    
+reg [1023:0] pps_reg;
 wire [15:0] slice_width_a;
-assign slice_width_a = {in_data_gated[8*8+:8], in_data_gated[9*8+:8]};
 wire [15:0] slice_height_a;
-assign slice_height_a = {in_data_gated[10*8+:8], in_data_gated[11*8+:8]};
 wire [31:0] slice_num_px_a;
-assign slice_num_px_a = {in_data_gated[12*8+:8], in_data_gated[13*8+:8], in_data_gated[14*8+:8], in_data_gated[15*8+:8]};
+wire [3:0] slices_per_line_1_1_a; // only support slices_per_line = 2^n, limited to 8
+wire [39:0] slice_num_bits_a;
 wire [15:0] frameWidthRoundedUp;
-assign frameWidthRoundedUp = (|frame_width[2:0]) ? (frame_width & 16'hfff8) + 4'd8 : frame_width;
+generate
+  if (PPS_INPUT_METHOD == "IN_BAND") begin : gen_in_band_slice
+    assign slice_width_a = {in_data_gated[8*8+:8], in_data_gated[9*8+:8]};
+    assign slice_height_a = {in_data_gated[10*8+:8], in_data_gated[11*8+:8]};
+    assign slice_num_px_a = {in_data_gated[12*8+:8], in_data_gated[13*8+:8], in_data_gated[14*8+:8], in_data_gated[15*8+:8]};
+    assign frameWidthRoundedUp = (|frame_width[2:0]) ? (frame_width & 16'hfff8) + 4'd8 : frame_width;
+    assign slices_per_line_1_1_a = {6'b0,
+                                    ((frameWidthRoundedUp>>3) >= (slice_width - 4'd8)) & ((frameWidthRoundedUp>>3) <= (slice_width + 4'd8)),
+                                    ((frameWidthRoundedUp>>2) >= (slice_width - 4'd8)) & ((frameWidthRoundedUp>>2) <= (slice_width + 4'd8)),
+                                    ((frameWidthRoundedUp>>1) >= (slice_width - 4'd8)) & ((frameWidthRoundedUp>>1) <= (slice_width + 4'd8)),
+                                    (frameWidthRoundedUp >= (slice_width - 4'd8))      & (frameWidthRoundedUp <= (slice_width + 4'd8))};
+    assign slice_num_bits_a = {in_data_gated[27*8+:8], in_data_gated[28*8+:8], in_data_gated[29*8+:8], in_data_gated[30*8+:8], in_data_gated[31*8+:8]};
+  end
+  else if (PPS_INPUT_METHOD == "DIRECT") begin : gen_direct_slice
+    assign slice_width_a = {pps_reg[8*8+:8], pps_reg[9*8+:8]};
+    assign slice_height_a = {pps_reg[10*8+:8], pps_reg[11*8+:8]};
+    assign slice_num_px_a = {pps_reg[12*8+:8], pps_reg[13*8+:8], pps_reg[14*8+:8], pps_reg[15*8+:8]};
+    assign frameWidthRoundedUp = (|pps_reg[5*8+:3]) ? ({pps_reg[4*8+:8], pps_reg[5*8+:8]} & 16'hfff8) + 4'd8 :  {pps_reg[4*8+:8], pps_reg[5*8+:8]};
+    assign slices_per_line_1_1_a = {6'b0,
+                                    ((frameWidthRoundedUp>>3) >= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] - 4'd8)) & ((frameWidthRoundedUp>>3) <= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] + 4'd8)),
+                                    ((frameWidthRoundedUp>>2) >= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] - 4'd8)) & ((frameWidthRoundedUp>>2) <= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] + 4'd8)),
+                                    ((frameWidthRoundedUp>>1) >= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] - 4'd8)) & ((frameWidthRoundedUp>>1) <= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] + 4'd8)),
+                                    (frameWidthRoundedUp >= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0]))      & (frameWidthRoundedUp <= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] + 4'd8))};
+    assign slice_num_bits_a = {pps_reg[91*8+:8], pps_reg[92*8+:8], pps_reg[93*8+:8], pps_reg[94*8+:8], pps_reg[95*8+:8]};
+  end
+endgenerate
 
 reg [7:0] flatness_qp_lut [7:0];
 reg [7:0] max_qp_lut [7:0];
 reg [7:0] target_rate_delta_lut [15:0];
 integer i;
-wire [39:0] slice_num_bits_a;
-assign slice_num_bits_a = {in_data_gated[27*8+:8], in_data_gated[28*8+:8], in_data_gated[29*8+:8], in_data_gated[30*8+:8], in_data_gated[31*8+:8]};
-wire [3:0] slices_per_line_1_1_a; // only support slices_per_line = 2^n, limited to 8
-assign slices_per_line_1_1_a = {6'b0,
-                                ((frameWidthRoundedUp>>3) >= (slice_width - 4'd8)) & ((frameWidthRoundedUp>>3) <= (slice_width + 4'd8)),
-                                ((frameWidthRoundedUp>>2) >= (slice_width - 4'd8)) & ((frameWidthRoundedUp>>2) <= (slice_width + 4'd8)),
-                                ((frameWidthRoundedUp>>1) >= (slice_width - 4'd8)) & ((frameWidthRoundedUp>>1) <= (slice_width + 4'd8)),
-                                (frameWidthRoundedUp >= (slice_width - 4'd8))      & (frameWidthRoundedUp <= (slice_width + 4'd8))};
+
 
 reg [3:0] slices_per_line_1_1;
 wire [$clog2(MAX_SLICE_WIDTH)-3-1:0] numBlocksInLine;
 reg [$clog2(MAX_SLICE_WIDTH)-3+16-1:0] blocksInLine_mult_rcFullnessOffsetThreshold;
 reg [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-4-1:0] numBlocksInSlice;
-always @ (posedge clk)
-  if (data_in_is_pps & in_valid)
-    case(line_cnt)
-      2'd0:
-        begin
-          version_minor <= in_data_gated[1*8+:2];
-          frame_width <= {in_data_gated[4*8+:8], in_data_gated[5*8+:8]};
-          frame_height <= {in_data_gated[6*8+:8], in_data_gated[7*8+:8]};
-          slice_width <= slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0];
-          slice_height <= slice_height_a[$clog2(MAX_SLICE_HEIGHT)-1:0];
-          slice_num_px <= slice_num_px_a[$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-1:0];
-          bits_per_pixel <= {in_data_gated[16*8+:2], in_data_gated[17*8+:8]};
-          bits_per_component_coded <= in_data_gated[(19*8+4)+:2];
-          source_color_space <= (in_data_gated[(19*8+2)+:2] == 2'b0) ? 2'd0 : 2'd2; // Color code: 0: RGB, 2: YCbCr
-          chroma_format <= in_data_gated[(19*8+0)+:2];
-          chunk_size <= {in_data_gated[22*8+:2], in_data_gated[23*8+:8]};
-          rc_buffer_init_size <= {in_data_gated[26*8+:8], in_data_gated[27*8+:8]};
-          rc_stuffing_bits <= in_data_gated[28*8+:8];
-          rc_init_tx_delay <= in_data_gated[29*8+:8];
-          rc_buffer_max_size <= {in_data_gated[30*8+:8], in_data_gated[31*8+:8]};
+generate 
+  if (PPS_INPUT_METHOD == "IN_BAND") begin : gen_pps_in_band
+    always @ (posedge clk)
+      if (data_in_is_pps & in_valid)
+        case(line_cnt)
+          2'd0:
+            begin
+              version_minor <= in_data_gated[1*8+:2];
+              frame_width <= {in_data_gated[4*8+:8], in_data_gated[5*8+:8]};
+              frame_height <= {in_data_gated[6*8+:8], in_data_gated[7*8+:8]};
+              slice_width <= slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0];
+              slice_height <= slice_height_a[$clog2(MAX_SLICE_HEIGHT)-1:0];
+              slice_num_px <= slice_num_px_a[$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-1:0];
+              bits_per_pixel <= {in_data_gated[16*8+:2], in_data_gated[17*8+:8]};
+              bits_per_component_coded <= in_data_gated[(19*8+4)+:2];
+              source_color_space <= (in_data_gated[(19*8+2)+:2] == 2'b0) ? 2'd0 : 2'd2; // Color code: 0: RGB, 2: YCbCr
+              chroma_format <= in_data_gated[(19*8+0)+:2];
+              chunk_size <= {in_data_gated[22*8+:2], in_data_gated[23*8+:8]};
+              rc_buffer_init_size <= {in_data_gated[26*8+:8], in_data_gated[27*8+:8]};
+              rc_stuffing_bits <= in_data_gated[28*8+:8];
+              rc_init_tx_delay <= in_data_gated[29*8+:8];
+              rc_buffer_max_size <= {in_data_gated[30*8+:8], in_data_gated[31*8+:8]};
+            end
+          2'd1:
+            begin
+              rc_target_rate_threshold <= {in_data_gated[0*8+:8], in_data_gated[1*8+:8], in_data_gated[2*8+:8], in_data_gated[3*8+:8]};
+              rc_target_rate_scale <= in_data_gated[4*8+:8];
+              rc_fullness_scale <= in_data_gated[5*8+:8];
+              rc_fullness_offset_threshold <= {in_data_gated[6*8+:8], in_data_gated[7*8+:8]};
+              rc_fullness_offset_slope <= {in_data_gated[8*8+:8], in_data_gated[9*8+:8], in_data_gated[10*8+:8]};
+              rc_target_rate_extra_fbls <= in_data_gated[11*8+:4];
+              flatness_qp_very_flat_fbls <= in_data_gated[12*8+:8];
+              flatness_qp_very_flat_nfbls <= in_data_gated[13*8+:8];
+              flatness_qp_somewhat_flat_fbls <= in_data_gated[14*8+:8];
+              flatness_qp_somewhat_flat_nfbls <= in_data_gated[15*8+:8];
+              for (i=0; i<8; i=i+1) begin
+                flatness_qp_lut[i] <= in_data_gated[(16+i)*8+:8];
+                max_qp_lut[i] <= in_data_gated[(24+i)*8+:8];
+              end
+              numBlocksInSlice <= numBlocksInLine * (slice_height >> 1);
+              slices_per_line_1_1 <= slices_per_line_1_1_a;
+            end
+          2'd2:
+            begin
+              for (i=0; i<16; i=i+1)
+                target_rate_delta_lut[i] <= in_data_gated[i*8+:8];
+              mppf_bits_per_comp_R_Y <= in_data_gated[(17*8+4)+:4];
+              mppf_bits_per_comp_G_Cb <= in_data_gated[17*8+:4];
+              mppf_bits_per_comp_B_Cr <= in_data_gated[(18*8+4)+:4];
+              mppf_bits_per_comp_Y <= in_data_gated[18*8+:4];
+              mppf_bits_per_comp_Co <= in_data_gated[(19*8+4)+:4];
+              mppf_bits_per_comp_Cg <= in_data_gated[19*8+:4];
+              ssm_max_se_size <= in_data_gated[23*8+:8];
+              slice_num_bits <= slice_num_bits_a;
+              blocksInLine_mult_rcFullnessOffsetThreshold <= numBlocksInLine * rc_fullness_offset_threshold;
+            end
+          2'd3:
+            begin
+              chunk_adj_bits <= in_data_gated[1*8+:4];
+              num_extra_mux_bits <= {in_data_gated[2*8+:8], in_data_gated[3*8+:8]};
+              if (version_minor == 2'd2) begin
+                slices_per_line <= {in_data_gated[4*8+:2], in_data_gated[5*8+:8]};
+                slice_pad_x <= in_data_gated[6*8+:3];
+              end
+              else begin // Only support 1, 2, 4 and 8 slices per line in v1.1
+                slices_per_line <= slices_per_line_1_1;
+                case (slices_per_line_1_1)
+                  4'd1: slice_pad_x <= 4'd8 - (frame_width      & 3'b111);
+                  4'd2: slice_pad_x <= 4'd8 - ((frame_width>>1) & 3'b111);
+                  4'd4: slice_pad_x <= 4'd8 - ((frame_width>>2) & 3'b111);
+                  4'd8: slice_pad_x <= 4'd8 - ((frame_width>>3) & 3'b111);
+                endcase
+              end
+              mpp_min_step_size <= in_data_gated[7*8+:4];
+            end
+        endcase
+  end
+  else if (PPS_INPUT_METHOD == "DIRECT") begin : gen_pps_direct
+    always @ (posedge clk) begin
+      if (in_pps_valid)
+        pps_reg <= in_pps;
+      if ((~inside_frame & in_pps_valid_dl[0]) | in_eof) begin
+        version_minor <= pps_reg[1*8+:2];
+        frame_width <= {pps_reg[4*8+:8], pps_reg[5*8+:8]};
+        frame_height <= {pps_reg[6*8+:8], pps_reg[7*8+:8]};
+        slice_width <= slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0];
+        slice_height <= slice_height_a[$clog2(MAX_SLICE_HEIGHT)-1:0];
+        slice_num_px <= slice_num_px_a[$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-1:0];
+        bits_per_pixel <= {pps_reg[16*8+:2], pps_reg[17*8+:8]};
+        bits_per_component_coded <= pps_reg[(19*8+4)+:2];
+        source_color_space <= (pps_reg[(19*8+2)+:2] == 2'b0) ? 2'd0 : 2'd2; // Color code: 0: RGB, 2: YCbCr
+        chroma_format <= pps_reg[(19*8+0)+:2];
+        chunk_size <= {pps_reg[22*8+:2], pps_reg[23*8+:8]};
+        rc_buffer_init_size <= {pps_reg[26*8+:8], pps_reg[27*8+:8]};
+        rc_stuffing_bits <= pps_reg[28*8+:8];
+        rc_init_tx_delay <= pps_reg[29*8+:8];
+        rc_buffer_max_size <= {pps_reg[30*8+:8], pps_reg[31*8+:8]};
+
+        rc_target_rate_threshold <= {pps_reg[32*8+:8], pps_reg[33*8+:8], pps_reg[34*8+:8], pps_reg[35*8+:8]};
+        rc_target_rate_scale <= pps_reg[36*8+:8];
+        rc_fullness_scale <= pps_reg[37*8+:8];
+        rc_fullness_offset_threshold <= {pps_reg[38*8+:8], pps_reg[39*8+:8]};
+        rc_fullness_offset_slope <= {pps_reg[40*8+:8], pps_reg[41*8+:8], pps_reg[42*8+:8]};
+        rc_target_rate_extra_fbls <= pps_reg[43*8+:4];
+        flatness_qp_very_flat_fbls <= pps_reg[44*8+:8];
+        flatness_qp_very_flat_nfbls <= pps_reg[45*8+:8];
+        flatness_qp_somewhat_flat_fbls <= pps_reg[46*8+:8];
+        flatness_qp_somewhat_flat_nfbls <= pps_reg[47*8+:8];
+        for (i=0; i<8; i=i+1) begin
+          flatness_qp_lut[i] <= pps_reg[(48+i)*8+:8];
+          max_qp_lut[i] <= pps_reg[(56+i)*8+:8];
         end
-      2'd1:
-        begin
-          rc_target_rate_threshold <= {in_data_gated[0*8+:8], in_data_gated[1*8+:8], in_data_gated[2*8+:8], in_data_gated[3*8+:8]};
-          rc_target_rate_scale <= in_data_gated[4*8+:8];
-          rc_fullness_scale <= in_data_gated[5*8+:8];
-          rc_fullness_offset_threshold <= {in_data_gated[6*8+:8], in_data_gated[7*8+:8]};
-          rc_fullness_offset_slope <= {in_data_gated[8*8+:8], in_data_gated[9*8+:8], in_data_gated[10*8+:8]};
-          rc_target_rate_extra_fbls <= in_data_gated[11*8+:4];
-          flatness_qp_very_flat_fbls <= in_data_gated[12*8+:8];
-          flatness_qp_very_flat_nfbls <= in_data_gated[13*8+:8];
-          flatness_qp_somewhat_flat_fbls <= in_data_gated[14*8+:8];
-          flatness_qp_somewhat_flat_nfbls <= in_data_gated[15*8+:8];
-          for (i=0; i<8; i=i+1) begin
-            flatness_qp_lut[i] <= in_data_gated[(16+i)*8+:8];
-            max_qp_lut[i] <= in_data_gated[(24+i)*8+:8];
-          end
-          numBlocksInSlice <= numBlocksInLine * (slice_height >> 1);
-          slices_per_line_1_1 <= slices_per_line_1_1_a;
+        numBlocksInSlice <= (slice_width_a[$clog2(MAX_SLICE_HEIGHT)-1:0] >> 3) * (slice_height_a[$clog2(MAX_SLICE_HEIGHT)-1:0] >> 1);
+        
+        for (i=0; i<16; i=i+1)
+          target_rate_delta_lut[i] <= pps_reg[(64+i)*8+:8];
+        mppf_bits_per_comp_R_Y <= pps_reg[(81*8+4)+:4];
+        mppf_bits_per_comp_G_Cb <= pps_reg[81*8+:4];
+        mppf_bits_per_comp_B_Cr <= pps_reg[(82*8+4)+:4];
+        mppf_bits_per_comp_Y <= pps_reg[82*8+:4];
+        mppf_bits_per_comp_Co <= pps_reg[(83*8+4)+:4];
+        mppf_bits_per_comp_Cg <= pps_reg[83*8+:4];
+        ssm_max_se_size <= pps_reg[87*8+:8];
+        slice_num_bits <= slice_num_bits_a;
+        blocksInLine_mult_rcFullnessOffsetThreshold <= (slice_width_a[$clog2(MAX_SLICE_HEIGHT)-1:0] >> 3) * {pps_reg[38*8+:8], pps_reg[39*8+:8]};
+        
+        chunk_adj_bits <= pps_reg[97*8+:4];
+        num_extra_mux_bits <= {pps_reg[98*8+:8], pps_reg[99*8+:8]};
+        if (version_minor == 2'd2) begin
+          slices_per_line <= {pps_reg[100*8+:2], pps_reg[101*8+:8]};
+          slice_pad_x <= pps_reg[102*8+:3];
         end
-      2'd2:
-        begin
-          for (i=0; i<16; i=i+1)
-            target_rate_delta_lut[i] <= in_data_gated[i*8+:8];
-          mppf_bits_per_comp_R_Y <= in_data_gated[(17*8+4)+:4];
-          mppf_bits_per_comp_G_Cb <= in_data_gated[17*8+:4];
-          mppf_bits_per_comp_B_Cr <= in_data_gated[(18*8+4)+:4];
-          mppf_bits_per_comp_Y <= in_data_gated[18*8+:4];
-          mppf_bits_per_comp_Co <= in_data_gated[(19*8+4)+:4];
-          mppf_bits_per_comp_Cg <= in_data_gated[19*8+:4];
-          ssm_max_se_size <= in_data_gated[23*8+:8];
-          slice_num_bits <= slice_num_bits_a;
-          blocksInLine_mult_rcFullnessOffsetThreshold <= numBlocksInLine * rc_fullness_offset_threshold;
+        else begin // Only support 1, 2, 4 and 8 slices per line in v1.1
+          slices_per_line <= slices_per_line_1_1_a;
+          case (slices_per_line_1_1_a)
+            4'd1: slice_pad_x <= 4'd8 - ({pps_reg[4*8+:8], pps_reg[5*8+:8]}      & 3'b111);
+            4'd2: slice_pad_x <= 4'd8 - (({pps_reg[4*8+:8], pps_reg[5*8+:8]}>>1) & 3'b111);
+            4'd4: slice_pad_x <= 4'd8 - (({pps_reg[4*8+:8], pps_reg[5*8+:8]}>>2) & 3'b111);
+            4'd8: slice_pad_x <= 4'd8 - (({pps_reg[4*8+:8], pps_reg[5*8+:8]}>>3) & 3'b111);
+          endcase
         end
-      2'd3:
-        begin
-          chunk_adj_bits <= in_data_gated[1*8+:4];
-          num_extra_mux_bits <= {in_data_gated[2*8+:8], in_data_gated[3*8+:8]};
-          if (version_minor == 2'd2) begin
-            slices_per_line <= {in_data_gated[4*8+:2], in_data_gated[5*8+:8]};
-            slice_pad_x <= in_data_gated[6*8+:3];
-          end
-          else begin // Only support 1, 2, 4 and 8 slices per line in v1.1
-            slices_per_line <= slices_per_line_1_1;
-            case (slices_per_line_1_1)
-              4'd1: slice_pad_x <= 4'd8 - (frame_width      & 3'b111);
-              4'd2: slice_pad_x <= 4'd8 - ((frame_width>>1) & 3'b111);
-              4'd4: slice_pad_x <= 4'd8 - ((frame_width>>2) & 3'b111);
-              4'd8: slice_pad_x <= 4'd8 - ((frame_width>>3) & 3'b111);
-            endcase
-          end
-          mpp_min_step_size <= in_data_gated[7*8+:4];
-        end
-    endcase
+        mpp_min_step_size <= pps_reg[103*8+:4];
+
+      end
+    end
+  end
+endgenerate
     
 // Derived parameters
 integer c;
@@ -304,7 +423,7 @@ always @ (posedge clk)
 reg signed [13:0] minPoint [2:0];
 assign numBlocksInLine = slice_width >> 3;
 always @ (posedge clk)
-  if (data_in_is_pps_dl[0] & ~data_in_is_pps) begin
+  if ((data_in_is_pps_dl[0] & ~data_in_is_pps) | ((~inside_frame & in_pps_valid_dl[1]) | in_eof_dl)) begin
     origSliceWidth <= slice_width - slice_pad_x;
     eoc_valid_pixs <= 4'd8 - slice_pad_x;
     b0 <= sliceSizeInBytes << 3; // B0 in spec section 4.5.2

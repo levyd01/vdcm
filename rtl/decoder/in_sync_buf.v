@@ -14,11 +14,13 @@ module in_sync_buf
   input wire [DATA_WIDTH-1:0] in_data,
   input wire in_valid,
   input wire in_sof,
+  input wire in_eof,
   input wire in_data_is_pps,
   
   output reg [DATA_WIDTH-1:0] out_data,
   output reg out_valid,
   output reg out_sof,
+  output reg out_eof,
   output reg out_data_is_pps
 );
 
@@ -79,9 +81,6 @@ assign empty = (addr_w_rd_clk_domain == addr_r);
 wire rd_en;
 assign rd_en = ~empty;
 
-wire in_sof_core_clk;
-synchronizer sync_in_sof_u (.clk(clk_rd), .in(in_sof & in_valid), .out(in_sof_core_clk));
-  
 always @ (posedge clk_rd or negedge rst_n)
   if (~rst_n)
     addr_r <= {ADDR_WIDTH{1'b0}};
@@ -93,12 +92,12 @@ always @ (posedge clk_rd or negedge rst_n)
     else
       addr_r <= addr_r + 1'b1;
 	     
-wire [DATA_WIDTH+2-1:0] rd_data;
+wire [DATA_WIDTH+3-1:0] rd_data;
 wire mem_valid;
 sync_dp_ram 
 #(
   .NUMBER_OF_LINES  (NUMBER_OF_LINES),
-  .DATA_WIDTH       (DATA_WIDTH + 2) // in_data_is_pps in DATA_WIDTH-1, sof in DATA_WIDTH-2, data in DATA_WIDTH-3:0
+  .DATA_WIDTH       (DATA_WIDTH + 3) // in_data_is_pps in DATA_WIDTH-1, sof in DATA_WIDTH-2, eof in DATA_WIDTH-3, data in DATA_WIDTH-4:0
 )
 sync_dp_ram_u
 (
@@ -108,7 +107,7 @@ sync_dp_ram_u
   .r_en             (rd_en),
   .addr_w           (addr_w[ADDR_WIDTH-2:0]),
   .addr_r           (addr_r[ADDR_WIDTH-2:0]),
-  .wr_data          ({in_data_is_pps, in_sof, in_data}),
+  .wr_data          ({in_data_is_pps, in_sof, in_eof, in_data}),
   .rd_data          (rd_data),
   .mem_valid        (mem_valid)
 );
@@ -130,11 +129,13 @@ always @ (posedge clk_rd or negedge rst_n)
 always @ (posedge clk_rd)
   if (mem_valid) begin
     out_data <= rd_data[DATA_WIDTH-1:0];
-    out_sof <= rd_data[DATA_WIDTH+1-1];
-    out_data_is_pps <= rd_data[DATA_WIDTH+2-1];
+    out_eof <= rd_data[DATA_WIDTH+1-1];
+    out_sof <= rd_data[DATA_WIDTH+2-1];
+    out_data_is_pps <= rd_data[DATA_WIDTH+3-1];
   end
   else begin
     out_sof <= 1'b0;
+    out_eof <= 1'b0;
     out_data_is_pps <= 1'b0;
   end
 

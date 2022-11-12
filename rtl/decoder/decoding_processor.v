@@ -9,8 +9,7 @@
 
 module decoding_processor
 #(
-  parameter MAX_SLICE_WIDTH         = 2560,
-  parameter MAX_BPC                 = 12
+  parameter MAX_SLICE_WIDTH         = 2560
 )
 (
   input wire clk,

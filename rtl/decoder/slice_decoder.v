@@ -9,8 +9,7 @@
 module slice_decoder
 #(
   parameter MAX_SLICE_WIDTH         = 2560,
-  parameter MAX_SLICE_HEIGHT        = 2560,
-  parameter MAX_BPC                 = 12
+  parameter MAX_SLICE_HEIGHT        = 2560
 )
 (
   input wire clk,
@@ -295,8 +294,7 @@ wire [8:0] maxQp;
 
 decoding_processor
 #(
-  .MAX_SLICE_WIDTH              (MAX_SLICE_WIDTH),
-  .MAX_BPC                      (MAX_BPC)
+  .MAX_SLICE_WIDTH              (MAX_SLICE_WIDTH)
 )
 decoding_processor_u
 (

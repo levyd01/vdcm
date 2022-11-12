@@ -5,12 +5,13 @@
 
 module tb_decoder
 #(
+  parameter PPS_INPUT_METHOD = "IN_BAND" // "IN_BAND", "DIRECT", "APB"
 )();
 
 parameter MAX_SLICE_WIDTH     = 2560;
 parameter MAX_SLICE_HEIGHT    = 2560;
-parameter MAX_BPC = 8;
 parameter MAX_NBR_SLICES = 8;
+
 
 real AVG_PIXEL_RATE = 1.2*(10**6); // pixels per second
 real SPEED_FACTOR = 1.2; // Factor mutiplying the minimum required rate of the internal DSC clock.
@@ -46,7 +47,9 @@ initial begin
   fc = $fscanf(file_test_cfg,"%f\t%s\n", bits_per_pixel, comment);
   fc = $fscanf(file_test_cfg,"%s\t%s\n", image_file_name, comment);
   image_file_extension = split_using_delimiter_fn(0, image_file_name, ".", cnt);
-  $display("image extension: %s", image_file_extension);
+  //$display("image extension: %s", image_file_extension);
+  $display("PPS_INPUT_METHOD = %s", PPS_INPUT_METHOD);
+  
   ->write_output_type;
   CLK_CORE_PERIOD = (10**6) / (AVG_PIXEL_RATE / 16.0 / chunks_per_line * SPEED_FACTOR);
   CLK_IN_INT_PERIOD = (10**6) / AVG_PIXEL_RATE * (16*256.0/bits_per_pixel);
@@ -71,9 +74,12 @@ end
 reg rst_n = 1'b0;
 reg flush = 1'b0;
 reg in_sof = 1'b0;
+reg in_eof = 1'b0;
 reg in_valid = 1'b0;
+reg in_pps_valid = 1'b0;
 reg [255:0] in_data = 256'hx;
 reg in_data_is_pps = 1'b0;
+reg [128*8-1:0] in_pps = 1024'hx;
 reg [128*8-1:0] pps;
 integer w;
 reg [255:0] tmp_data;
@@ -109,14 +115,23 @@ initial begin
     pps[8*b+:8] = pps_rev[(127-b)*8+:8];
 
   // Send PPS in 4 bursts of 256 bits each
-  for (w=0; w<4; w=w+1) begin
-    in_valid = 1'b1;
-    in_data = pps[w*256+:256];
-    in_data_is_pps = 1'b1;
-    @(negedge clk_in_int);
-    in_valid = 1'b0;
-    in_data_is_pps = 1'b0;
-    in_data = 256'hx;
+  if (PPS_INPUT_METHOD == "IN_BAND")
+    for (w=0; w<4; w=w+1) begin
+      in_valid = 1'b1;
+      in_data = pps[w*256+:256];
+      in_data_is_pps = 1'b1;
+      @(negedge clk_in_int);
+      in_valid = 1'b0;
+      in_data_is_pps = 1'b0;
+      in_data = 256'hx;
+    end
+  else if (PPS_INPUT_METHOD == "DIRECT") begin
+    @(negedge clk_core);
+    in_pps_valid = 1'b1;
+    in_pps = pps;
+    @(negedge clk_core);
+    in_pps_valid = 1'b0;
+    in_pps = 1024'hx;
   end
   in_sof = 1'b1;
   in_valid = 1'b0;
@@ -137,9 +152,11 @@ initial begin
     for(b=0; b<32; b=b+1)
       tmp_data[8*b+:8] = tmp_data_rev[(31-b)*8+:8];
     in_valid = 1'b1;
+    in_eof = (ReadStatus == 0) & in_valid;
     in_data = tmp_data;
     @(negedge clk_in_int);
     in_sof = 1'b0;
+    in_eof = 1'b0;
     in_valid = 1'b0;
     in_data = 256'hx;
   end
@@ -171,7 +188,7 @@ wire pixs_out_eol;
 vdcm_decoder
 #(
   .MAX_NBR_SLICES            (MAX_NBR_SLICES),
-  .MAX_BPC                   (MAX_BPC),
+  .PPS_INPUT_METHOD          (PPS_INPUT_METHOD),
   .MAX_SLICE_WIDTH           (MAX_SLICE_WIDTH),
   .MAX_SLICE_HEIGHT          (MAX_SLICE_HEIGHT)
 )
@@ -186,7 +203,10 @@ uut
   .in_data              (in_data),
   .in_valid             (in_valid),
   .in_sof               (in_sof),  // Start of frame
-  .in_data_is_pps       (in_data_is_pps), // in_data contains PPS before in_sof
+  .in_eof               (in_eof),  // End of frame
+  .in_data_is_pps       (in_data_is_pps), // in_data contains PPS before in_sof for the IN_BAND method
+  .in_pps               (in_pps), // contains the complete 128 bytes of PPS for the DIRECT method
+  .in_pps_valid         (in_pps_valid), // when asserted in_pps is valid. Clocked by clk_core
   
   .pixs_out_sof         (pixs_out_sof),
   .pixs_out             (pixs_out),

@@ -26,7 +26,8 @@ module slice_mux
   output reg [4*3*14-1:0] pixs_out,
   output reg [3:0] pixs_out_valid,
   output reg pixs_out_eol,
-  output reg pixs_out_eof
+  output reg pixs_out_eof,
+  output wire pixs_out_eof_clk_core
 );
 
 genvar gs, gc, gp, gm;
@@ -322,6 +323,8 @@ always @ (posedge clk_out_int) begin
   pixs_out_eof <= eof_rd;
   pixs_out_eol <= eol_rd;
 end
+
+synchronizer sync_pixs_out_eof (.clk(clk_core), .in(pixs_out_eof), .out(pixs_out_eof_clk_core));
 
 wire [13:0] pixs_out_unpacked [2:0][3:0];
 generate

@@ -51,6 +51,7 @@ for test_nbr in test_nbr_list:
   os.system("cp golden/test" + str(test_nbr) + "/golden_image.out.* golden/.")
   os.system("cp golden/test" + str(test_nbr) + "/test_cfg.txt .")
   os.system("cp golden/test" + str(test_nbr) + "/vdcm.bits .")
+  os.system("cp golden/test" + str(test_nbr) + "/runtest.do .")
   
   # Generate from debugTracerDecoder.txt all golden files needed by Verilog testbench
   os.chdir('./golden')
