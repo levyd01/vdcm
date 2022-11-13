@@ -14,25 +14,64 @@ module vdcm_decoder
   parameter MAX_SLICE_HEIGHT        = 2560
 )
 (
+  // Clocks and resets
   input wire clk_core,
   input wire clk_in_int,
   input wire clk_out_int,
+  input wire clk_apb,
   input wire rst_n,
   input wire flush,
   
+  // Compressed input data
   input wire [255:0] in_data,
   input wire in_valid,
   input wire in_sof,              // Start of frame
   input wire in_eof,              // End of frame
+  
+  // PPS input
   input wire in_data_is_pps, // in_data contains PPS before in_sof in IN_BAND method
   input wire [1023:0] in_pps, // contains PPS in DIRECT method
   input wire in_pps_valid, // in_pps is valid. Clocked by clk_core
-  
+  input wire [5:0] paddr,
+  input wire pwrite,
+  input wire psel,
+  input wire penable, // APB signals start
+  input wire [31:0] pwdata,
+  output wire pslverr,
+  output wire [31:0] prdata,
+  output wire pready, // APB signals end
+ 
+  // Pixels output
   output wire pixs_out_sof,
   output wire [4*3*14-1:0] pixs_out,
   output wire pixs_out_eol,
   output wire pixs_out_eof,
   output wire [3:0] pixs_out_valid
+);
+
+wire [1023:0] pps_apb;
+localparam NBR_PPS_REG = 32;
+wire pps_apb_valid;
+
+apb_slave 
+#(
+  .NBR_REGS             (NBR_PPS_REG)
+)
+apb_slave_u
+(
+  .clk_apb              (clk_apb),
+  .clk_core             (clk_core),
+  .rst_n                (rst_n),
+  .paddr                (paddr),
+  .pwrite               (pwrite),
+  .psel                 (psel),
+  .penable              (penable),
+  .pwdata               (pwdata),
+  .pready               (pready),
+  .prdata               (prdata),
+  .pslverr              (pslverr),
+  .register_bank_p      (pps_apb),
+  .reg_bank_valid       (pps_apb_valid)
 );
 
 wire sync_buf_valid;
@@ -154,6 +193,8 @@ pps_regs_u
   .in_eof                         (pixs_out_eof_clk_core),
   .in_pps                         (in_pps),
   .in_pps_valid                   (in_pps_valid),
+  .in_pps_apb                     (pps_apb),
+  .in_pps_apb_valid               (pps_apb_valid),
                                 
   .version_minor                  (version_minor),
   .frame_width                    (frame_width),

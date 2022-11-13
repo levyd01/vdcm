@@ -5,6 +5,7 @@
 "../../rtl/utils/sync_dp_ram.v"
 "../../rtl/utils/ycocg2rgb.v"
 "../../rtl/utils/rgb2ycocg.v"
+"../../rtl/utils/apb_slave.v"
 "../../rtl/decoder/vdcm_decoder.v"
 "../../rtl/decoder/pps_regs.v"
 "../../rtl/decoder/in_sync_buf.v"

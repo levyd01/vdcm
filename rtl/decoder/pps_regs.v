@@ -24,6 +24,8 @@ module pps_regs
   input wire data_in_is_pps,
   input wire [1023:0] in_pps, // contains PPS in DIRECT method
   input wire in_pps_valid, // in_pps is valid. Clocked by clk_core
+  input wire [1023:0] in_pps_apb, // PPS from APB slave
+  input wire in_pps_apb_valid, // indicates which 32 bits from in_pps_apb is valid
   
   output reg [1:0] version_minor,
   output reg [15:0] frame_width,
@@ -125,11 +127,18 @@ always @ (posedge clk or negedge rst_n)
   else
     in_pps_valid_dl <= {in_pps_valid_dl[0], in_pps_valid};
     
+reg [1:0] in_pps_apb_valid_dl;    
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    in_pps_apb_valid_dl <= 2'b0;
+  else
+    in_pps_apb_valid_dl <= {in_pps_apb_valid_dl[0], in_pps_apb_valid};
+    
 reg pps_valid_i;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     pps_valid_i <= 1'b0;
-  else if (((line_cnt == 2'd3) & in_valid) | ((~inside_frame & in_pps_valid_dl[0]) | in_eof))
+  else if (((line_cnt == 2'd3) & in_valid) | ((~inside_frame & (in_pps_valid_dl[0] | in_pps_apb_valid_dl[0])) | in_eof))
     pps_valid_i <= 1'b1;
   else
     pps_valid_i <= 1'b0;
@@ -177,6 +186,18 @@ generate
                                     ((frameWidthRoundedUp>>1) >= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] - 4'd8)) & ((frameWidthRoundedUp>>1) <= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] + 4'd8)),
                                     (frameWidthRoundedUp >= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0]))      & (frameWidthRoundedUp <= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] + 4'd8))};
     assign slice_num_bits_a = {pps_reg[91*8+:8], pps_reg[92*8+:8], pps_reg[93*8+:8], pps_reg[94*8+:8], pps_reg[95*8+:8]};
+  end
+  else if (PPS_INPUT_METHOD == "APB") begin : gen_apb_slice
+    assign slice_width_a = {in_pps_apb[8*8+:8], in_pps_apb[9*8+:8]};
+    assign slice_height_a = {in_pps_apb[10*8+:8], in_pps_apb[11*8+:8]};
+    assign slice_num_px_a = {in_pps_apb[12*8+:8], in_pps_apb[13*8+:8], in_pps_apb[14*8+:8], in_pps_apb[15*8+:8]};
+    assign frameWidthRoundedUp = (|in_pps_apb[5*8+:3]) ? ({in_pps_apb[4*8+:8], in_pps_apb[5*8+:8]} & 16'hfff8) + 4'd8 :  {in_pps_apb[4*8+:8], in_pps_apb[5*8+:8]};
+    assign slices_per_line_1_1_a = {6'b0,
+                                    ((frameWidthRoundedUp>>3) >= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] - 4'd8)) & ((frameWidthRoundedUp>>3) <= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] + 4'd8)),
+                                    ((frameWidthRoundedUp>>2) >= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] - 4'd8)) & ((frameWidthRoundedUp>>2) <= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] + 4'd8)),
+                                    ((frameWidthRoundedUp>>1) >= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] - 4'd8)) & ((frameWidthRoundedUp>>1) <= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] + 4'd8)),
+                                    (frameWidthRoundedUp >= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0]))      & (frameWidthRoundedUp <= (slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0] + 4'd8))};
+    assign slice_num_bits_a = {in_pps_apb[91*8+:8], in_pps_apb[92*8+:8], in_pps_apb[93*8+:8], in_pps_apb[94*8+:8], in_pps_apb[95*8+:8]};
   end
 endgenerate
 
@@ -336,6 +357,69 @@ generate
       end
     end
   end
+  else if (PPS_INPUT_METHOD == "APB") begin : gen_pps_apb
+    always @ (posedge clk) begin
+      if ((in_pps_apb_valid & ~inside_frame) | in_eof) begin
+        version_minor <= in_pps_apb[1*8+:2];
+        frame_width <= {in_pps_apb[4*8+:8], in_pps_apb[5*8+:8]};
+        frame_height <= {in_pps_apb[6*8+:8], in_pps_apb[7*8+:8]};
+        slice_width <= slice_width_a[$clog2(MAX_SLICE_WIDTH)-1:0];
+        slice_height <= slice_height_a[$clog2(MAX_SLICE_HEIGHT)-1:0];
+        slice_num_px <= slice_num_px_a[$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-1:0];
+        bits_per_pixel <= {in_pps_apb[16*8+:2], in_pps_apb[17*8+:8]};
+        bits_per_component_coded <= in_pps_apb[(19*8+4)+:2];
+        source_color_space <= (in_pps_apb[(19*8+2)+:2] == 2'b0) ? 2'd0 : 2'd2; // Color code: 0: RGB, 2: YCbCr
+        chroma_format <= in_pps_apb[(19*8+0)+:2];
+        chunk_size <= {in_pps_apb[22*8+:2], in_pps_apb[23*8+:8]};
+        rc_buffer_init_size <= {in_pps_apb[26*8+:8], in_pps_apb[27*8+:8]};
+        rc_stuffing_bits <= in_pps_apb[28*8+:8];
+        rc_init_tx_delay <= in_pps_apb[29*8+:8];
+        rc_buffer_max_size <= {in_pps_apb[30*8+:8], in_pps_apb[31*8+:8]};
+        rc_target_rate_threshold <= {in_pps_apb[32*8+:8], in_pps_apb[33*8+:8], in_pps_apb[34*8+:8], in_pps_apb[35*8+:8]};
+        rc_target_rate_scale <= in_pps_apb[36*8+:8];
+        rc_fullness_scale <= in_pps_apb[37*8+:8];
+        rc_fullness_offset_threshold <= {in_pps_apb[38*8+:8], in_pps_apb[39*8+:8]};
+        rc_fullness_offset_slope <= {in_pps_apb[40*8+:8], in_pps_apb[41*8+:8], in_pps_apb[42*8+:8]};
+        rc_target_rate_extra_fbls <= in_pps_apb[43*8+:4];
+        flatness_qp_very_flat_fbls <= in_pps_apb[44*8+:8];
+        flatness_qp_very_flat_nfbls <= in_pps_apb[45*8+:8];
+        flatness_qp_somewhat_flat_fbls <= in_pps_apb[46*8+:8];
+        flatness_qp_somewhat_flat_nfbls <= in_pps_apb[47*8+:8];
+        for (i=0; i<8; i=i+1) begin
+          flatness_qp_lut[i] <= in_pps_apb[(48+i)*8+:8];
+          max_qp_lut[i] <= in_pps_apb[(56+i)*8+:8];
+        end
+        numBlocksInSlice <= (slice_width_a[$clog2(MAX_SLICE_HEIGHT)-1:0] >> 3) * (slice_height_a[$clog2(MAX_SLICE_HEIGHT)-1:0] >> 1);
+        for (i=0; i<16; i=i+1)
+          target_rate_delta_lut[i] <= in_pps_apb[(64+i)*8+:8];
+        mppf_bits_per_comp_R_Y <= in_pps_apb[(81*8+4)+:4];
+        mppf_bits_per_comp_G_Cb <= in_pps_apb[81*8+:4];
+        mppf_bits_per_comp_B_Cr <= in_pps_apb[(82*8+4)+:4];
+        mppf_bits_per_comp_Y <= in_pps_apb[82*8+:4];
+        mppf_bits_per_comp_Co <= in_pps_apb[(83*8+4)+:4];
+        mppf_bits_per_comp_Cg <= in_pps_apb[83*8+:4];
+        ssm_max_se_size <= in_pps_apb[87*8+:8];
+        slice_num_bits <= slice_num_bits_a;
+        blocksInLine_mult_rcFullnessOffsetThreshold <= (slice_width_a[$clog2(MAX_SLICE_HEIGHT)-1:0] >> 3) * {in_pps_apb[38*8+:8], in_pps_apb[39*8+:8]};
+        chunk_adj_bits <= in_pps_apb[97*8+:4];
+        num_extra_mux_bits <= {in_pps_apb[98*8+:8], in_pps_apb[99*8+:8]};
+        if (version_minor == 2'd2) begin
+          slices_per_line <= {in_pps_apb[100*8+:2], in_pps_apb[101*8+:8]};
+          slice_pad_x <= in_pps_apb[102*8+:3];
+        end
+        else begin // Only support 1, 2, 4 and 8 slices per line in v1.1
+          slices_per_line <= slices_per_line_1_1_a;
+          case (slices_per_line_1_1_a)
+            4'd1: slice_pad_x <= 4'd8 - ({in_pps_apb[4*8+:8], in_pps_apb[5*8+:8]}      & 3'b111);
+            4'd2: slice_pad_x <= 4'd8 - (({in_pps_apb[4*8+:8], in_pps_apb[5*8+:8]}>>1) & 3'b111);
+            4'd4: slice_pad_x <= 4'd8 - (({in_pps_apb[4*8+:8], in_pps_apb[5*8+:8]}>>2) & 3'b111);
+            4'd8: slice_pad_x <= 4'd8 - (({in_pps_apb[4*8+:8], in_pps_apb[5*8+:8]}>>3) & 3'b111);
+          endcase
+        end
+        mpp_min_step_size <= in_pps_apb[103*8+:4];
+      end
+    end
+  end
 endgenerate
     
 // Derived parameters
@@ -423,7 +507,7 @@ always @ (posedge clk)
 reg signed [13:0] minPoint [2:0];
 assign numBlocksInLine = slice_width >> 3;
 always @ (posedge clk)
-  if ((data_in_is_pps_dl[0] & ~data_in_is_pps) | ((~inside_frame & in_pps_valid_dl[1]) | in_eof_dl)) begin
+  if ((data_in_is_pps_dl[0] & ~data_in_is_pps) | ((~inside_frame & (in_pps_valid_dl[1] | in_pps_apb_valid_dl[1])) | in_eof_dl)) begin
     origSliceWidth <= slice_width - slice_pad_x;
     eoc_valid_pixs <= 4'd8 - slice_pad_x;
     b0 <= sliceSizeInBytes << 3; // B0 in spec section 4.5.2

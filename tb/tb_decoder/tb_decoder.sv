@@ -21,6 +21,11 @@ reg clk_core = 1;
 always
   #(CLK_CORE_PERIOD/2) clk_core = ~clk_core;
   
+real CLK_APB_PERIOD = 137.0; // Random choice of period, asynchronous to the other clocks.
+reg clk_apb = 1;
+always
+  #(CLK_APB_PERIOD/2) clk_apb = ~clk_apb;
+  
 function string split_using_delimiter_fn(input int offset, string str,string del,output int cnt);
   for (int i = offset; i < str.len(); i=i+1) 
     if (str.getc(i) == del) begin
@@ -99,6 +104,14 @@ integer ReadStatus;
 reg [255:0] tmp_data_rev;
 integer closing_files = 0;
 reg pixs_out_eof_dl;
+reg penable;
+reg pselx = 0;
+reg [5:0] paddr;
+reg [31:0] pwdata;
+wire pslverr;
+reg pwrite;
+wire [31:0] prdata;
+wire pready;
 
 initial begin
   #55;
@@ -132,6 +145,26 @@ initial begin
     @(negedge clk_core);
     in_pps_valid = 1'b0;
     in_pps = 1024'hx;
+  end
+  else if (PPS_INPUT_METHOD == "APB") begin
+    for (w=0; w<33; w=w+1) begin
+      @(negedge clk_apb);
+      pselx = 1'b1;
+      pwrite = 1'b1;
+      penable = 1'b0;
+      paddr = w & 63;
+      pwdata = (w==32) ? 32'bx : pps[w*32+:32]; // Writing to address 32 triggers the internal transfer from APB slave to the PPS registers
+      @(negedge clk_apb);
+      penable = 1'b1;
+      @ (posedge pready)
+      @(negedge clk_apb);
+      pselx = 1'b0;
+      pwrite = 1'bx;
+      penable = 1'bx;
+      paddr = 6'bx;
+      pwdata = 256'bx;
+    end
+    
   end
   in_sof = 1'b1;
   in_valid = 1'b0;
@@ -197,6 +230,7 @@ uut
   .clk_core             (clk_core),
   .clk_in_int           (clk_in_int),
   .clk_out_int          (clk_out_int),
+  .clk_apb              (clk_apb),
   .rst_n                (rst_n),
   .flush                (flush),
   
@@ -207,6 +241,14 @@ uut
   .in_data_is_pps       (in_data_is_pps), // in_data contains PPS before in_sof for the IN_BAND method
   .in_pps               (in_pps), // contains the complete 128 bytes of PPS for the DIRECT method
   .in_pps_valid         (in_pps_valid), // when asserted in_pps is valid. Clocked by clk_core
+  .paddr                (paddr), // APB Address
+  .pwrite               (pwrite),
+  .psel                 (pselx),
+  .penable              (penable),
+  .pwdata               (pwdata),
+  .pready               (pready),
+  .prdata               (prdata),
+  .pslverr              (pslverr),
   
   .pixs_out_sof         (pixs_out_sof),
   .pixs_out             (pixs_out),

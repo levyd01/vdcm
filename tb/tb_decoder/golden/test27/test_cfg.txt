@@ -1,0 +1,10 @@
+1                         #chunks_per_line
+6.0                       #bits_per_pixel
+VesaCTS_634x480_8_420.yuv # image name
+1.1                       # VDCM_version
+config_420_8bpc_6bpp.cfg  # Config_file_name
+0                         # sliceHeight (0 means no override)
+2                         # chromaFormat
+8                         # bitDepth
+634                       # width
+480                       # height
