@@ -48,10 +48,10 @@ module pps_regs
   output reg [15:0] rc_fullness_offset_threshold,
   output reg [23:0] rc_fullness_offset_slope,
   output reg [3:0] rc_target_rate_extra_fbls,
-  output reg [7:0] flatness_qp_very_flat_fbls,
-  output reg [7:0] flatness_qp_very_flat_nfbls,
-  output reg [7:0] flatness_qp_somewhat_flat_fbls,
-  output reg [7:0] flatness_qp_somewhat_flat_nfbls,
+  output reg signed [7:0] flatness_qp_very_flat_fbls,
+  output reg signed [7:0] flatness_qp_very_flat_nfbls,
+  output reg signed [7:0] flatness_qp_somewhat_flat_fbls,
+  output reg signed [7:0] flatness_qp_somewhat_flat_nfbls,
   output wire [8*8-1:0] flatness_qp_lut_p,
   output wire [8*8-1:0] max_qp_lut_p,
   output wire [16*8-1:0] target_rate_delta_lut_p,
@@ -228,7 +228,7 @@ generate
               bits_per_component_coded <= in_data_gated[(19*8+4)+:2];
               source_color_space <= (in_data_gated[(19*8+2)+:2] == 2'b0) ? 2'd0 : 2'd2; // Color code: 0: RGB, 2: YCbCr
               chroma_format <= in_data_gated[(19*8+0)+:2];
-              chunk_size <= {in_data_gated[22*8+:2], in_data_gated[23*8+:8]};
+              chunk_size <= {in_data_gated[22*8+:8], in_data_gated[23*8+:8]};
               rc_buffer_init_size <= {in_data_gated[26*8+:8], in_data_gated[27*8+:8]};
               rc_stuffing_bits <= in_data_gated[28*8+:8];
               rc_init_tx_delay <= in_data_gated[29*8+:8];
@@ -303,7 +303,7 @@ generate
         bits_per_component_coded <= pps_reg[(19*8+4)+:2];
         source_color_space <= (pps_reg[(19*8+2)+:2] == 2'b0) ? 2'd0 : 2'd2; // Color code: 0: RGB, 2: YCbCr
         chroma_format <= pps_reg[(19*8+0)+:2];
-        chunk_size <= {pps_reg[22*8+:2], pps_reg[23*8+:8]};
+        chunk_size <= {pps_reg[22*8+:8], pps_reg[23*8+:8]};
         rc_buffer_init_size <= {pps_reg[26*8+:8], pps_reg[27*8+:8]};
         rc_stuffing_bits <= pps_reg[28*8+:8];
         rc_init_tx_delay <= pps_reg[29*8+:8];
@@ -370,7 +370,7 @@ generate
         bits_per_component_coded <= in_pps_apb[(19*8+4)+:2];
         source_color_space <= (in_pps_apb[(19*8+2)+:2] == 2'b0) ? 2'd0 : 2'd2; // Color code: 0: RGB, 2: YCbCr
         chroma_format <= in_pps_apb[(19*8+0)+:2];
-        chunk_size <= {in_pps_apb[22*8+:2], in_pps_apb[23*8+:8]};
+        chunk_size <= {in_pps_apb[22*8+:8], in_pps_apb[23*8+:8]};
         rc_buffer_init_size <= {in_pps_apb[26*8+:8], in_pps_apb[27*8+:8]};
         rc_stuffing_bits <= in_pps_apb[28*8+:8];
         rc_init_tx_delay <= in_pps_apb[29*8+:8];

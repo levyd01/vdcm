@@ -51,10 +51,10 @@ module dec_rate_control
   input wire [8*8-1:0] max_qp_lut_p,
   input wire signed [6:0] minQp,
   input wire [15:0] rc_buffer_init_size,
-  input wire [7:0] flatness_qp_very_flat_fbls,
-  input wire [7:0] flatness_qp_very_flat_nfbls,
-  input wire [7:0] flatness_qp_somewhat_flat_fbls,
-  input wire [7:0] flatness_qp_somewhat_flat_nfbls,
+  input wire signed [7:0] flatness_qp_very_flat_fbls,
+  input wire signed [7:0] flatness_qp_very_flat_nfbls,
+  input wire signed [7:0] flatness_qp_somewhat_flat_fbls,
+  input wire signed [7:0] flatness_qp_somewhat_flat_nfbls,
   input wire [8*8-1:0] flatness_qp_lut_p,
   input wire [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-4-1:0] rcOffsetThreshold,
   
@@ -166,7 +166,7 @@ assign QpDecrementTable[4][4] = 4'sd5;
 // unpack inputs
 wire [7:0] target_rate_delta_lut [15:0];
 wire [7:0] max_qp_lut [7:0];
-wire [7:0] flatness_qp_lut [7:0];
+wire signed [7:0] flatness_qp_lut [7:0];
 genvar gi;
 generate
   for (gi = 0; gi < 16 ; gi = gi + 1) begin : gen_target_rate_delta_lut
@@ -355,8 +355,14 @@ reg [7:0] targetRateScale;
 reg [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-1:0] targetRateThreshold;
 always @ (posedge clk)
   if (sos) begin
-    targetRateScale <= rc_target_rate_scale;
-    targetRateThreshold <= rc_target_rate_threshold;
+    if (($signed({1'b0, slice_num_px}) - 6'sd16) < $signed({1'b0, rc_target_rate_threshold})) begin
+      targetRateScale <= rc_target_rate_scale - 1'b1;
+      targetRateThreshold <= 1'b1 << (rc_target_rate_scale - 2'd2);
+    end
+    else begin
+      targetRateScale <= rc_target_rate_scale;
+      targetRateThreshold <= rc_target_rate_threshold;
+    end
   end
   else if (blockBits_valid)
     if ((slicePixelsRemaining - 6'sd16) < $signed({1'b0, targetRateThreshold})) begin
@@ -549,44 +555,65 @@ always @ (posedge clk)
     else
       minQpOffset <= 4'd8;
 
+function signed [7:0] ClampMinMax;
+  input signed [7:0] min;
+  input signed [7:0] max;
+  input signed [9:0] unclamped;
+  reg signed [7:0] newMin;
+  reg signed [7:0] newMax;
+  reg tooSmall;
+  reg tooBig;
+  begin
+    if (min > max) begin // Real situation that happened in test 31
+      newMax = min;
+      newMin = max;
+    end
+    else begin
+      newMax = max;
+      newMin = min;
+    end
+    tooSmall = (unclamped < newMin);
+    tooBig = (unclamped > newMax);
+    case({tooBig, tooSmall})
+      2'd0: ClampMinMax = unclamped[7:0];
+      2'd1: ClampMinMax = newMin;
+      2'd2: ClampMinMax = newMax;
+      default: ClampMinMax = unclamped[7:0];
+    endcase
+  end
+endfunction
 wire signed [9:0] qpUnclamped;  
 assign qpUnclamped = qp + deltaQp;
-reg signed [7:0] qpClamped;
-always @ (*)
-  if (qpUnclamped < minQp + $signed({1'b0, minQpOffset}))
-    qpClamped = minQp + $signed({1'b0, minQpOffset});
-  else if (qpUnclamped > $signed({1'b0, maxQp}))
-    qpClamped = $signed({1'b0, maxQp});
-  else 
-    qpClamped = qpUnclamped[7:0];
+wire signed [7:0] qpClamped;
+assign qpClamped = ClampMinMax(minQp + $signed({1'b0, minQpOffset}), $signed({1'b0, maxQp}), qpUnclamped);
 
-wire [7:0] flatness_qp_very_flat;
+wire signed [7:0] flatness_qp_very_flat;
 assign flatness_qp_very_flat = fbls ? flatness_qp_very_flat_fbls : flatness_qp_very_flat_nfbls;
-wire [7:0] flatness_qp_somewhat_flat;
+wire signed [7:0] flatness_qp_somewhat_flat;
 assign flatness_qp_somewhat_flat = fbls ? flatness_qp_somewhat_flat_fbls : flatness_qp_somewhat_flat_nfbls;
 wire [2:0] lutFlatnessQpIndex;
 assign lutFlatnessQpIndex = (rcFullness >> 13);
-wire [7:0] lutFlatnessQpSelected;
+wire signed [7:0] lutFlatnessQpSelected;
 assign lutFlatnessQpSelected = flatness_qp_lut[lutFlatnessQpIndex];
 
 reg signed [7:0] qpFlatnessAdjusted;
 always @ (*)
   if (flatnessFlag)
     case (flatnessType)
-      2'd0: if ($signed({1'b0, flatness_qp_very_flat}) < qpClamped)
+      2'd0: if (flatness_qp_very_flat < qpClamped)
               qpFlatnessAdjusted = $signed({1'b0, flatness_qp_very_flat});
             else
               qpFlatnessAdjusted = qpClamped;
-      2'd1: if ($signed({1'b0, flatness_qp_somewhat_flat}) < qpClamped)
+      2'd1: if (flatness_qp_somewhat_flat < qpClamped)
               qpFlatnessAdjusted = flatness_qp_somewhat_flat;
             else
               qpFlatnessAdjusted = qpClamped;
-      2'd2: if ($signed({1'b0, lutFlatnessQpSelected}) < qpClamped)
-              qpFlatnessAdjusted = $signed({1'b0, lutFlatnessQpSelected});
+      2'd2: if (lutFlatnessQpSelected < qpClamped)
+              qpFlatnessAdjusted = lutFlatnessQpSelected;
             else
               qpFlatnessAdjusted = qpClamped;
-      2'd3: if ($signed({1'b0, lutFlatnessQpSelected}) > qpClamped)
-              qpFlatnessAdjusted = $signed({1'b0, lutFlatnessQpSelected});
+      2'd3: if (lutFlatnessQpSelected > qpClamped)
+              qpFlatnessAdjusted = lutFlatnessQpSelected;
             else
               qpFlatnessAdjusted = qpClamped;
       default: qpFlatnessAdjusted = qpClamped;
@@ -601,7 +628,7 @@ always @ (posedge clk)
   
 reg signed [7:0] qpFirstLineAdjusted;
 always @ (*)
-  if (fbls & rcFullnessLorE96Percent & (qpFlatnessAdjusted > maxQp))
+  if (fbls & rcFullnessLorE96Percent & (qpFlatnessAdjusted > $signed({1'b0, maxQp})))
     qpFirstLineAdjusted = maxQp;
   else
     qpFirstLineAdjusted = qpFlatnessAdjusted;

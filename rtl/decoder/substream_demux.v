@@ -41,11 +41,13 @@ module substream_demux
   output wire ssm_sof,
   output wire sos_for_rc,
   output reg [1:0] sos_fsm,
+  output reg [1:0] eos_fsm,
   
   output wire [4*MAX_FUNNEL_SHIFTER_SIZE-1:0] data_to_be_parsed_p,
   output wire [3:0] fs_ready,
 
   input wire substream0_parsed,
+  input wire parse_substreams,
   input wire [9*4-1:0] size_to_remove_p,
   input wire size_to_remove_valid
 
@@ -101,6 +103,7 @@ always @ (posedge clk or negedge rst_n)
 wire [9:0] initDecodeDelay;
 assign initDecodeDelay = initDecodeDelay_i >> 8;
 
+wire alt_early_eos;
 reg [9:0] initDecodeDelayCnt;
 reg rate_buf_read_allowed;
 wire rd_en;
@@ -110,7 +113,7 @@ always @ (posedge clk or negedge rst_n)
     initDecodeDelayCnt <= 10'd0;
     rate_buf_read_allowed <= 1'b0;
   end
-  else if (early_eos) begin
+  else if (alt_early_eos) begin
     initDecodeDelayCnt <= 10'd0;
     rate_buf_read_allowed <= 1'b0;
   end
@@ -157,19 +160,30 @@ assign eos_pulse = eos & ~eos_dl;
 wire eos_falling_edge;
 assign eos_falling_edge = ~eos & eos_dl;
 
+
 reg [1:0] pos_in_block;
 reg [RATE_BUFF_ADDR_WIDTH-1:0] rate_buffer_addr_r;
+reg nbr_wrap_around_rd;
 always @ (posedge clk or negedge rst_n)
-  if (~rst_n)
+  if (~rst_n) begin
     rate_buffer_addr_r <= {RATE_BUFF_ADDR_WIDTH{1'b0}};
-  else if (in_sof)
+    nbr_wrap_around_rd <= 1'b0;
+  end
+  else if (in_sof) begin
     rate_buffer_addr_r <= {RATE_BUFF_ADDR_WIDTH{1'b0}};
+    nbr_wrap_around_rd <= 1'b0;
+  end
   // Bypass garbage at end of slice. See spec. p.157 "SSM needs a small portion of the total slice rate to be set aside to guarantee correct behavior at the end of the slice.  
-  else if (early_eos) 
+  else if (start_decode) begin
     rate_buffer_addr_r <= nextStartOfSliceAddr;
+    if ((nextStartOfSliceAddr > rate_buffer_addr_r) ? ((nextStartOfSliceAddr - rate_buffer_addr_r) > (RATE_BUFF_NUM_LINES>>1)) : ((rate_buffer_addr_r - nextStartOfSliceAddr) > (RATE_BUFF_NUM_LINES>>1))) // there was a wrap around
+      nbr_wrap_around_rd <= ~nbr_wrap_around_rd;
+  end
   else if (rd_en)
-    if (rate_buffer_addr_r == RATE_BUFF_NUM_LINES-1)
+    if (rate_buffer_addr_r == RATE_BUFF_NUM_LINES-1) begin
       rate_buffer_addr_r <= {RATE_BUFF_ADDR_WIDTH{1'b0}};
+      nbr_wrap_around_rd <= ~nbr_wrap_around_rd;
+    end
     else
       rate_buffer_addr_r <= rate_buffer_addr_r + 1'b1;
 
@@ -194,13 +208,6 @@ rate_buffer_u
   .mem_valid                    (rd_valid) 
 );
 
-reg nbr_wrap_around_rd;
-always @ (posedge clk or negedge rst_n)
-  if (~rst_n) 
-    nbr_wrap_around_rd <= 1'b0;
-  else if (rd_en & (rate_buffer_addr_r == RATE_BUFF_NUM_LINES-1))
-    nbr_wrap_around_rd <= ~nbr_wrap_around_rd;
-    
 wire buffer_empty;
 assign buffer_empty = ~(nbr_wrap_around_wr ^ nbr_wrap_around_rd) & (rate_buffer_addr_w == rate_buffer_addr_r);
 wire buffer_full;
@@ -216,6 +223,18 @@ always @ (posedge clk or negedge rst_n)
     overflow <= buffer_full & w_en;
     underflow <= buffer_empty & rd_en;
   end
+  
+wire [3:0] mux_word_request_i; 
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n)
+    eos_fsm <= 2'b0;
+  else
+    case (eos_fsm)
+      2'd0: if (isLastBlock) eos_fsm <= 2'd1;
+      2'd1: if (/*~(|mux_word_request_i) & ~isLastBlock)*/parse_substreams) eos_fsm <= 2'd2;
+      2'd2: eos_fsm <= 2'b0;
+    endcase
+assign alt_early_eos = (eos_fsm == 2'd2);
 
 localparam SOS_FSM_IDLE = 2'd0;
 localparam SOS_FSM_FETCH_SSM0 = 2'd1;
@@ -228,7 +247,7 @@ always @ (posedge clk or negedge rst_n)
     fsm_cnt <= 2'd0;
   else if (flush)
     fsm_cnt <= 2'd0;
-  else if ((sos_fsm == SOS_FSM_IDLE) | (early_eos & ~eof))
+  else if ((sos_fsm == SOS_FSM_IDLE) | (alt_early_eos & ~eof))
     fsm_cnt <= 2'd0;
   else if ((sos_fsm == SOS_FSM_FETCH_SSM0) | (sos_fsm == SOS_FSM_PARSE_SSM0))
     fsm_cnt <= fsm_cnt + 1'b1;  
@@ -244,7 +263,7 @@ always @ (posedge clk or negedge rst_n)
       SOS_FSM_IDLE      : if (start_decode) sos_fsm <= SOS_FSM_FETCH_SSM0;
       SOS_FSM_FETCH_SSM0: if /*(fsm_cnt == 2'd3)*/(mux_word_valid[0]) sos_fsm <= SOS_FSM_PARSE_SSM0;
       SOS_FSM_PARSE_SSM0: if (fsm_cnt == 2'd3) sos_fsm <= SOS_FSM_RUNTIME;
-      SOS_FSM_RUNTIME   : if (early_eos) sos_fsm <= SOS_FSM_IDLE;
+      SOS_FSM_RUNTIME   : if (alt_early_eos) sos_fsm <= SOS_FSM_IDLE;
     endcase
 
 wire sos_rd_en;
@@ -272,7 +291,7 @@ reg [15:0] byte_cnt;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     byte_cnt <= 16'd0;
-  else if (in_sof | early_eos | (slices_per_line == 10'd1))
+  else if (in_sof | alt_early_eos | (slices_per_line == 10'd1))
       byte_cnt <= 16'd0;
   else if (rd_en)
     if (byte_cnt + 6'd32 >= chunk_size) 
@@ -284,7 +303,7 @@ reg [5:0] rd_data_fullness;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n) 
     rd_data_fullness <= 6'd32;
-  else if ((early_eos & ~eof) | (slices_per_line == 10'd1))
+  else if ((alt_early_eos & ~eof) | (slices_per_line == 10'd1))
       rd_data_fullness <= 6'd32;
   else if (rd_en)
     if ((byte_cnt + 7'd64 >= chunk_size) & (rd_data_fullness == 6'd32))
@@ -305,7 +324,7 @@ reg [8:0] commonByteBufferFullness; // In bytes
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     commonByteBufferFullness <= 8'd0;
-  else if ((in_sof & in_valid) | (early_eos & ~eof))
+  else if ((in_sof & in_valid) | (alt_early_eos & ~eof))
     commonByteBufferFullness <= 8'd0;
   else if (initDecodeDelayCnt >= initDecodeDelay - 3'd2) // Start to fill the common buffer a bit before it is allowed to read
     if (first_rd_en_of_slice) // We know that at this point in time there will never be pull
@@ -475,7 +494,6 @@ always @ (posedge clk or negedge rst_n)
   else if (eos_pulse)
     firstSliceOfFrame <= 1'b0;
 
-wire [3:0] mux_word_request_i;
 
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
@@ -486,10 +504,17 @@ always @ (posedge clk or negedge rst_n)
     pos_in_block <= pos_in_block + 1'b1;
 
 
+reg [2:0] nbr_mux_word_request_i;
+always @ (*) begin
+  nbr_mux_word_request_i = ((sos_fsm == SOS_FSM_FETCH_SSM0) ? sos_mux_word_request_0 : mux_word_request_i[0]) & ~mux_word_valid[0];
+  for (i = 1; i < 4; i = i + 1)
+    nbr_mux_word_request_i = nbr_mux_word_request_i + (mux_word_request_i[i] & ~mux_word_valid[i]);
+end
+
 wire [3:0] mux_word_request;
 wire en_mux_word_request;
 assign en_mux_word_request = (((pos_in_block == 2'd0) & ~ssm_sof) | ssm_sof) & ~eos & (commonByteBufferFullness >= (ssm_max_se_size[7:3]<<2)) & ~disable_rcb_rd;
-assign mux_word_request[0] = (sos_fsm != SOS_FSM_IDLE) & ((sos_fsm == SOS_FSM_FETCH_SSM0) ? sos_mux_word_request_0 : mux_word_request_i[0]) & ~mux_word_valid[0] & en_mux_word_request;
+assign mux_word_request[0] = (eos_fsm == 2'b0) & (sos_fsm != SOS_FSM_IDLE) & ((sos_fsm == SOS_FSM_FETCH_SSM0) ? sos_mux_word_request_0 : mux_word_request_i[0]) & ~mux_word_valid[0] & en_mux_word_request;
 assign mux_word_request[1] = rate_buf_read_allowed & mux_word_request_i[1] & ~mux_word_valid[1] & ((sos_fsm == SOS_FSM_PARSE_SSM0) | (sos_fsm == SOS_FSM_RUNTIME)) & en_mux_word_request;
 assign mux_word_request[2] = rate_buf_read_allowed & mux_word_request_i[2] & ~mux_word_valid[2] & ((sos_fsm == SOS_FSM_PARSE_SSM0) | (sos_fsm == SOS_FSM_RUNTIME)) & en_mux_word_request;
 assign mux_word_request[3] = rate_buf_read_allowed & mux_word_request_i[3] & ~mux_word_valid[3] & ((sos_fsm == SOS_FSM_PARSE_SSM0) | (sos_fsm == SOS_FSM_RUNTIME)) & en_mux_word_request;
@@ -501,10 +526,10 @@ always @ (posedge clk or negedge rst_n)
     
 
 wire [3:0] flush_fs;
-assign flush_fs[0] = in_sof | early_eos;
-assign flush_fs[1] = in_sof | early_eos;
-assign flush_fs[2] = in_sof | early_eos;
-assign flush_fs[3] = in_sof | early_eos;
+assign flush_fs[0] = in_sof | start_decode;
+assign flush_fs[1] = in_sof | start_decode;
+assign flush_fs[2] = in_sof | start_decode;
+assign flush_fs[3] = in_sof | start_decode;
 
 wire [3:0] size_to_remove_valid_i;
 assign size_to_remove_valid_i[0] = (sos_fsm == SOS_FSM_PARSE_SSM0) ? substream0_parsed : size_to_remove_valid;

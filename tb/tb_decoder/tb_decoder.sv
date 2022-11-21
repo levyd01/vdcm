@@ -34,6 +34,7 @@ function string split_using_delimiter_fn(input int offset, string str,string del
      end
 endfunction
   
+localparam PEEK2AVERAGE_FACTOR = 2;
   
 integer fc;
 integer file_test_cfg;
@@ -57,7 +58,7 @@ initial begin
   
   ->write_output_type;
   CLK_CORE_PERIOD = (10**6) / (AVG_PIXEL_RATE / 16.0 / chunks_per_line * SPEED_FACTOR);
-  CLK_IN_INT_PERIOD = (10**6) / AVG_PIXEL_RATE * (16*256.0/bits_per_pixel);
+  CLK_IN_INT_PERIOD = (10**6) / AVG_PIXEL_RATE * 16*256/bits_per_pixel;
   CLK_OUT_INT_PERIOD = (10**6) / (AVG_PIXEL_RATE / 4.0 * SPEED_FACTOR);
   
 end

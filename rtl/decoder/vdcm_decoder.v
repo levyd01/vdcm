@@ -84,7 +84,7 @@ wire sync_buf_data_is_pps;
 // -----------
 in_sync_buf 
 #(
-  .NUMBER_OF_LINES          (4),
+  .NUMBER_OF_LINES          (16),
   .DATA_WIDTH               (256)
 )
 input_sync_buf_u
@@ -127,10 +127,10 @@ wire [7:0] rc_fullness_scale;
 wire [15:0] rc_fullness_offset_threshold;
 wire [23:0] rc_fullness_offset_slope;
 wire [3:0] rc_target_rate_extra_fbls;
-wire [7:0] flatness_qp_very_flat_fbls;
-wire [7:0] flatness_qp_very_flat_nfbls;
-wire [7:0] flatness_qp_somewhat_flat_fbls;
-wire [7:0] flatness_qp_somewhat_flat_nfbls;
+wire signed [7:0] flatness_qp_very_flat_fbls;
+wire signed [7:0] flatness_qp_very_flat_nfbls;
+wire signed [7:0] flatness_qp_somewhat_flat_fbls;
+wire signed [7:0] flatness_qp_somewhat_flat_nfbls;
 wire [8*8-1:0] flatness_qp_lut_p;
 wire [8*8-1:0] max_qp_lut_p;
 wire [16*8-1:0] target_rate_delta_lut_p;

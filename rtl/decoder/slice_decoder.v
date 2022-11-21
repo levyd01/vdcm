@@ -61,10 +61,10 @@ module slice_decoder
   input wire [8*8-1:0] max_qp_lut_p,
   input wire signed [6:0] minQp,
   input wire [15:0] rc_buffer_init_size,
-  input wire [7:0] flatness_qp_very_flat_fbls,
-  input wire [7:0] flatness_qp_very_flat_nfbls,
-  input wire [7:0] flatness_qp_somewhat_flat_fbls,
-  input wire [7:0] flatness_qp_somewhat_flat_nfbls,
+  input wire signed [7:0] flatness_qp_very_flat_fbls,
+  input wire signed [7:0] flatness_qp_very_flat_nfbls,
+  input wire signed [7:0] flatness_qp_somewhat_flat_fbls,
+  input wire signed [7:0] flatness_qp_somewhat_flat_nfbls,
   input wire [8*8-1:0] flatness_qp_lut_p,
   input wire [3*2-1:0] partitionSize_p,
   input wire [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-4-1:0] rcOffsetThreshold,
@@ -103,6 +103,7 @@ wire nextBlockIsFls;
 wire neighborsAbove_rd_en;
 wire block_push;
 wire [1:0] sos_fsm;
+wire [1:0] eos_fsm;
 wire parse_substreams;
 wire substreams123_parsed;
 wire sof;
@@ -191,8 +192,10 @@ substream_demux_u
   .disable_rcb_rd               (flow_stop),
   .sos_for_rc                   (sos_for_rc),
   .sos_fsm                      (sos_fsm),
+  .eos_fsm                      (eos_fsm),
   
   .substream0_parsed            (substream0_parsed),
+  .parse_substreams             (parse_substreams),
   .data_to_be_parsed_p          (data_to_be_parsed_p),
   .fs_ready                     (fs_ready),
   .size_to_remove_p             (size_to_remove_p),
@@ -252,6 +255,7 @@ syntax_parser_u
   .sos                          (sos),
   .ssm_sof                      (ssm_sof),
   .sos_fsm                      (sos_fsm),
+  .eos_fsm                      (eos_fsm),
   .eos                          (eos),
  
   .fs_ready                     (fs_ready),

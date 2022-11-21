@@ -49,6 +49,7 @@ with open('test' + str(test_nbr) + '/test_cfg.txt') as fr:
 os.chdir("./../../../c_model/x64")
 # Run VDCM Encoder to generate compressed vdcm.bits
 slicesPerLineArg = "-slicesPerLine " + str(slicesPerLine)
+bppArg = "-bpp " + str(bpp)
 inFileArg = "-inFile ../../images/" + inFile
 bitstreamArg = "-bitstream vdcm.bits"
 configFileArg = "-configFile ../config_files/v" + vdcm_version + "/" + configFile
@@ -57,7 +58,6 @@ if (sliceHeight != 0): # Override default slice height
    sliceHeightArg = "-sliceHeight " + str(sliceHeight)
 if (fileExtension == "yuv"):
   chromaFormatArg = "-chromaFormat " + str(chromaFormat)
-  bppArg = "-bpp " + str(bpp)
   bitDepthArg = "-bitDepth " + str(bitDepth)
   widthArg = "-width " + str(width)
   heightArg = "-height " + str(height)
@@ -66,8 +66,8 @@ if (fileExtension == "yuv"):
   print("VDCM_Encoder.exe " + inFileArg + " " + slicesPerLineArg + " " + bitstreamArg + " " + configFileArg + " " + sliceHeightArg + " " \
                             + chromaFormatArg + " " + bppArg + " " + bitDepthArg + " " + widthArg + " " + heightArg)
 else:
-   os.system("VDCM_Encoder.exe " + inFileArg + " " + slicesPerLineArg + " " + bitstreamArg + " " + configFileArg + " " + sliceHeightArg)
-   print("VDCM_Encoder.exe " + inFileArg + " " + slicesPerLineArg + " " + bitstreamArg + " " + configFileArg + " " + sliceHeightArg)
+   os.system("VDCM_Encoder.exe " + inFileArg + " " + slicesPerLineArg + " " + bppArg + " " + bitstreamArg + " " + configFileArg + " " + sliceHeightArg)
+   print("VDCM_Encoder.exe " + inFileArg + " " + slicesPerLineArg + " " + bppArg + " " + bitstreamArg + " " + configFileArg + " " + sliceHeightArg)
 # Run VDCM Decoder to generate golden image
 if (fileExtension == "yuv"):
    recFileArg = "-recFile golden_image.out.yuv"

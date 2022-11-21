@@ -36,6 +36,7 @@ module syntax_parser
   input wire ssm_sof,
   input wire sos,
   input wire [1:0] sos_fsm,
+  input wire [1:0] eos_fsm,
   input wire eos,
   
   output wire [9*4-1:0] size_to_remove_p,
@@ -161,8 +162,8 @@ always @ (*)
   if (isFirstParse)
     parse_substreams_i = ~stall_pull & (clk_cnt == 2'd2) & fs_ready[0] & (sos_fsm >= SOS_FSM_PARSE_SSM0);
   else
-    parse_substreams_i = ~stall_pull & (clk_cnt == 2'd2) & (isLastBlock | (&fs_ready));
-
+    parse_substreams_i = ~stall_pull & (clk_cnt == 2'd2) & ((eos_fsm == 2'b0) ? (&fs_ready) : (&fs_ready[3:1]));
+    
 reg [4:0] parse_substreams_i_dl;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
@@ -1057,12 +1058,12 @@ always @ (*) begin : proc_parser_123
                     5'd16: pos = BitReverse(data_to_be_parsed[curSubstream][bit_pointer[curSubstream]+:16], 16);
                     default: pos = 16'd0;
                   endcase
-                  //$display("pos = %d", pos);
+                  //$display("time: %0t, pos = %d", $realtime, pos);
 		  	          bit_pointer[curSubstream] = bit_pointer[curSubstream] + bitsReq[c][ecgIdx];
                   neg = $signed({1'b0, pos}) - $signed({1'b0, 16'b1 << bitsReq[c][ecgIdx]});
                   //$display("neg = %d", neg);
                   compEcgCoeff[c][s] = (pos > th) ? neg : $signed({1'b0, pos});
-                  //$display("CPEC ECG (2C) compEcgCoeff[%d][%d] = %d", c, s, compEcgCoeff[c][s]);
+                  //$display("CPEC ECG (2C) compEcgCoeff[%0d][%0d] = %d", c, s, compEcgCoeff[c][s]);
                 end
               end
             end
@@ -1261,7 +1262,7 @@ assign pQuant_r_valid = blockBits_valid;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     blockBits_valid <= 1'b0;
-  else if (flush | (sos_fsm == SOS_FSM_IDLE))
+  else if (flush)
     blockBits_valid <= 1'b0;
   else
     blockBits_valid <= parse_substreams & ~isFirstParse; // There is no data available to parse in the beginning of the slice.
