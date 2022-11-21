@@ -1,0 +1,10 @@
+1                         #chunks_per_line
+14.25                     #bits_per_pixel
+Image3_640x400_10_420.yuv # image name
+1.2                       # VDCM_version
+config_420_10bpc_15bpp.cfg # Config_file_name
+0                         # sliceHeight (0 means no override)
+2                         # chromaFormat
+10                        # bitDepth
+640                       # width
+400                       # height
