@@ -403,7 +403,7 @@ generate
         blocksInLine_mult_rcFullnessOffsetThreshold <= (slice_width_a[$clog2(MAX_SLICE_HEIGHT)-1:0] >> 3) * {in_pps_apb[38*8+:8], in_pps_apb[39*8+:8]};
         chunk_adj_bits <= in_pps_apb[97*8+:4];
         num_extra_mux_bits <= {in_pps_apb[98*8+:8], in_pps_apb[99*8+:8]};
-        if (version_minor == 2'd2) begin
+        if (in_pps_apb[1*8+:2] == 2'd2) begin // version = 1.2
           slices_per_line <= {in_pps_apb[100*8+:2], in_pps_apb[101*8+:8]};
           slice_pad_x <= in_pps_apb[102*8+:3];
         end

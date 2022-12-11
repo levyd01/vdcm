@@ -70,22 +70,24 @@ assign even_row_data_valid = cscBlk_valid | cscBlk_valid_dl[0];
 assign odd_row_data_valid = |cscBlk_valid_dl[2:1];
 
 wire isSliceWidthDivBy8;
-assign isSliceWidthDivBy8 = (slice_width == ((slice_width>>3)<<3));
+//assign isSliceWidthDivBy8 = (slice_width == ((slice_width>>3)<<3));
+assign isSliceWidthDivBy8 = ~|slice_width[3:0];
 
 localparam ER_MAX_NBR_LINES = (MAX_SLICE_WIDTH>>3)+1;
 localparam ER_ADDR_WIDTH = $clog2(ER_MAX_NBR_LINES);
-reg [ER_ADDR_WIDTH-1:0] er_num_lines;
+//reg [ER_ADDR_WIDTH-1:0] er_num_lines;
+reg [ER_ADDR_WIDTH-1:0] er_wr_num_lines;
 reg first_half_of_slice_wr;
 always @ (posedge clk)
   if (sof)
     if (isSliceWidthDivBy8)
-      er_num_lines <= slice_width>>3;
+      er_wr_num_lines <= slice_width>>3;
     else
-      er_num_lines <= (slice_width>>3) + 1'b1;
+      er_wr_num_lines <= (slice_width>>3) + 1'b1;
   else if (isSliceWidthDivBy8)
-    er_num_lines <= slice_width>>3;
+    er_wr_num_lines <= slice_width>>3;
   else
-    er_num_lines <= first_half_of_slice_wr ? (slice_width>>3) + 1'b1 : (slice_width>>3) - 1'b1;
+    er_wr_num_lines <= first_half_of_slice_wr ? (slice_width>>3) + 1'b1 : (slice_width>>3) - 1'b1;
 
 reg [ER_ADDR_WIDTH-1:0] er_addr_wr;
 always @ (posedge clk)
@@ -94,7 +96,7 @@ always @ (posedge clk)
     first_half_of_slice_wr <= 1'b1;
   end
   else if (even_row_data_valid)
-    if (er_addr_wr == er_num_lines - 1'b1) begin
+    if (er_addr_wr == er_wr_num_lines - 1'b1) begin
       first_half_of_slice_wr <= ~first_half_of_slice_wr;
       er_addr_wr <= {ER_ADDR_WIDTH{1'b0}};
     end
@@ -123,6 +125,7 @@ always @ (posedge clk)
 assign er_start_read = ~first_half_of_slice_wr & first_half_of_slice_wr_dl;
 
 reg [1:0] er_rd_state;
+reg [ER_ADDR_WIDTH-1:0] er_rd_num_lines;
 reg [ER_ADDR_WIDTH-1:0] er_addr_rd;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
@@ -132,9 +135,22 @@ always @ (posedge clk or negedge rst_n)
   else
     case (er_rd_state) 
       2'd0: if (er_start_read) er_rd_state <= 2'd1;
-      2'd1: if (er_addr_rd == er_num_lines - 1'b1) er_rd_state <= 2'd2;
-      2'd2: if (er_addr_rd == er_num_lines - 1'b1) er_rd_state <= 2'b0;
+      2'd1: if (er_addr_rd == er_rd_num_lines/*er_num_lines*/ - 1'b1) er_rd_state <= 2'd2;
+      2'd2: if (er_addr_rd == er_rd_num_lines/*er_num_lines*/ - 1'b1) er_rd_state <= 2'b0;
     endcase
+    
+always @ (posedge clk)
+  if (sof)
+    if (isSliceWidthDivBy8)
+      er_rd_num_lines <= slice_width>>3;
+    else
+      er_rd_num_lines <= (slice_width>>3) + 1'b1;
+  else if (isSliceWidthDivBy8)
+    er_rd_num_lines <= slice_width>>3;
+  else if (er_rd_state == 2'd1)
+    er_rd_num_lines <= (slice_width>>3) + 1'b1;
+ else if (er_rd_state == 2'd2)
+    er_rd_num_lines <= (slice_width>>3) - 1'b1;
     
 wire er_rd_en;
 wire er_empty;
@@ -147,7 +163,7 @@ always @ (posedge clk)
     er_rd_wrap <= 1'b0;
   end
   else if (er_rd_en)
-    if (er_addr_rd == er_num_lines - 1'b1) begin
+    if (er_addr_rd == er_rd_num_lines/*er_num_lines*/ - 1'b1) begin
       er_rd_wrap <= ~er_rd_wrap;
       er_addr_rd <= {ER_ADDR_WIDTH{1'b0}};
     end
@@ -256,7 +272,7 @@ always @ (posedge clk or negedge rst_n)
     or_rd_en <= 1'b0;
   else if (sof | (or_addr_rd == or_num_lines - 1'b1))
     or_rd_en <= 1'b0;
-  else if ((er_addr_rd == er_num_lines - 1'b1) & (er_rd_state == 2'd2))
+  else if ((er_addr_rd == er_rd_num_lines/*er_num_lines*/ - 1'b1) & (er_rd_state == 2'd2))
     or_rd_en <= 1'b1;
     
 reg or_rd_wrap;

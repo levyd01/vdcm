@@ -183,8 +183,10 @@ initial begin
   @(negedge clk_in_int);
   while (!$feof(file_vdcm_bits)) begin
     ReadStatus  = $fread(tmp_data_rev,file_vdcm_bits);
+    //$display("tmp_data_rev = \t%x", tmp_data_rev);
     for(b=0; b<32; b=b+1)
       tmp_data[8*b+:8] = tmp_data_rev[(31-b)*8+:8];
+    //$display("tmp_data = \t\t%x", tmp_data);
     in_valid = 1'b1;
     in_eof = (ReadStatus == 0) & in_valid;
     in_data = tmp_data;
