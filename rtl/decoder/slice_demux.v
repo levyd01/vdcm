@@ -50,7 +50,7 @@ always @ (posedge clk or negedge rst_n)
     if (in_sof)
       word_cnt <= 12'd0;
     else if (last_word_of_chunk)
-      if (((next_byte_offset - byte_offset) >= remainder) & (next_byte_offset >= byte_offset))
+      if (((next_byte_offset - byte_offset) >= remainder) & (next_byte_offset >= byte_offset) & (remainder != 6'd0))
         word_cnt <= 12'd1;
       else
         word_cnt <= 12'd0;
@@ -77,13 +77,13 @@ always @ (posedge clk or negedge rst_n)
     byte_cnt <= 15'd0;
   else if (~one_slice_active)
     if (in_valid & ~data_in_is_pps)
-	  if (last_word_of_chunk)
-	    if (next_byte_offset != 0)
-	      byte_cnt <= 15'd32;
-		else
-		  byte_cnt <= 15'd0;
-	  else
-	    byte_cnt <= byte_cnt + 15'd32;
+	    if (last_word_of_chunk)
+	      if (next_byte_offset != 0)
+	        byte_cnt <= 15'd32;
+		    else
+		      byte_cnt <= 15'd0;
+	    else
+	      byte_cnt <= byte_cnt + 15'd32;
       
 	  
 

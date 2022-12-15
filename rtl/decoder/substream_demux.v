@@ -139,12 +139,12 @@ assign start_decode = rate_buf_read_allowed & ~rate_buf_read_allowed_dl;
 reg first_rd_valid_of_slice;
 reg first_rd_en_of_slice;    
 always @ (posedge clk)
-  first_rd_valid_of_slice <= first_rd_en_of_slice;
+  first_rd_valid_of_slice <= first_rd_en_of_slice & rd_en;
 reg [RATE_BUFF_ADDR_WIDTH+5-1:0] nextStartOfSliceInBytes;
 always @ (posedge clk)
   if (in_sof)
     nextStartOfSliceInBytes <= {(RATE_BUFF_ADDR_WIDTH+5){1'b0}};
-  else if (first_rd_en_of_slice)
+  else if (first_rd_en_of_slice & rd_en)
     nextStartOfSliceInBytes <= nextStartOfSliceInBytes + (sliceSizeInRamInBytes & ((RATE_BUFF_NUM_LINES<<5)-1));
 wire [RATE_BUFF_ADDR_WIDTH-1:0] nextStartOfSliceAddr;
 wire [4:0] nextStartOfSliceOffsetInWord;
@@ -303,7 +303,7 @@ reg [5:0] rd_data_fullness;
 always @ (posedge clk or negedge rst_n)
   if (~rst_n) 
     rd_data_fullness <= 6'd32;
-  else if ((alt_early_eos & ~eof) | (slices_per_line == 10'd1))
+  else if ((alt_early_eos & ~eof) | (slices_per_line == 10'd1) | (chunk_size[4:0] == 5'd0))
       rd_data_fullness <= 6'd32;
   else if (rd_en)
     if ((byte_cnt + 7'd64 >= chunk_size) & (rd_data_fullness == 6'd32))
@@ -315,7 +315,7 @@ always @ (posedge clk or negedge rst_n)
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     first_rd_en_of_slice <= 1'b0;
-  else if (flush | first_rd_en_of_slice)
+  else if (flush | rd_en/*first_rd_en_of_slice*/)
     first_rd_en_of_slice <= 1'b0;
   else if (start_decode)
     first_rd_en_of_slice <= 1'b1;
@@ -327,7 +327,7 @@ always @ (posedge clk or negedge rst_n)
   else if ((in_sof & in_valid) | (alt_early_eos & ~eof))
     commonByteBufferFullness <= 8'd0;
   else if (initDecodeDelayCnt >= initDecodeDelay - 3'd2) // Start to fill the common buffer a bit before it is allowed to read
-    if (first_rd_en_of_slice) // We know that at this point in time there will never be pull
+    if (rd_en & first_rd_en_of_slice) // We know that at this point in time there will never be pull
       commonByteBufferFullness <= commonByteBufferFullness + 6'd32 - nextStartOfSliceOffsetInWord;
     else if (rd_en & ~(|mux_word_valid)) // Only push to commonByteBuffer
       commonByteBufferFullness <= commonByteBufferFullness + rd_data_fullness;
