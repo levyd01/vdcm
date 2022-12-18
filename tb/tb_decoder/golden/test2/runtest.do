@@ -1,3 +1,4 @@
-vsim -gui -t ps -gPPS_INPUT_METHOD="IN_BAND"  -novopt work.tb_decoder
+vsim -gui -t ps -gPPS_INPUT_METHOD="IN_BAND"  -novopt -coverage -voptargs=\"+cover=bcfst\" work.tb_decoder
+coverage save -onexit ./coverage/test2.ucdb
 run -all 
 quit -f

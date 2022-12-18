@@ -69,7 +69,7 @@ for test_nbr in test_nbr_list:
   print("#         Running test " + str(test_nbr) + "          #")
   print("###################################")
 
-  os.system("vsim -c -do \"runtest.do\" -l sim.log -t ps -novopt work.tb_decoder")
+  os.system("vsim -c -do \"runtest.do\" -l sim.log -t ps -coverage -voptargs=\"+cover=bcfst\" -novopt work.tb_decoder")
   
   # Parse log file for errors
   error_string = "Fatal: Assertion error"

@@ -3,27 +3,27 @@
 "../../rtl/utils/dp_ram.v"
 "../../rtl/utils/sp_ram.v"
 "../../rtl/utils/sync_dp_ram.v"
-"../../rtl/utils/ycocg2rgb.v"
-"../../rtl/utils/rgb2ycocg.v"
-"../../rtl/utils/apb_slave.v"
-"../../rtl/decoder/vdcm_decoder.v"
-"../../rtl/decoder/pps_regs.v"
-"../../rtl/decoder/in_sync_buf.v"
-"../../rtl/decoder/slice_demux.v"
-"../../rtl/decoder/slice_decoder.v"
-"../../rtl/decoder/substream_demux.v"
-"../../rtl/decoder/ssmFunnelShifter.v"
-"../../rtl/decoder/block_position.v"
-"../../rtl/decoder/syntax_parser.v"
-"../../rtl/decoder/decoding_processor.v"
-"../../rtl/decoder/transform_mode.v"
-"../../rtl/decoder/above_pixels_buf.v"
-"../../rtl/decoder/bp_mode.v"
-"../../rtl/decoder/dec_rate_control.v"
-"../../rtl/decoder/masterQp2qp.v"
-"../../rtl/decoder/decoder_csc.v"
-"../../rtl/decoder/pixels_buf.v"
-"../../rtl/decoder/output_buffers.v"
-"../../rtl/decoder/out_sync_buf.v"
-"../../rtl/decoder/mpp_mode.v"
-"../../rtl/decoder/slice_mux.v"
+"../../rtl/utils/ycocg2rgb.v" -cover bcesx
+"../../rtl/utils/rgb2ycocg.v" -cover bcesx
+"../../rtl/utils/apb_slave.v" -cover bcesx
+"../../rtl/decoder/vdcm_decoder.v" -cover bcesx
+"../../rtl/decoder/pps_regs.v" -cover bcesx
+"../../rtl/decoder/in_sync_buf.v" -cover bcesx
+"../../rtl/decoder/slice_demux.v" -cover bcesx
+"../../rtl/decoder/slice_decoder.v" -cover bcesx
+"../../rtl/decoder/substream_demux.v" -cover bcesx
+"../../rtl/decoder/ssmFunnelShifter.v" -cover bcesx
+"../../rtl/decoder/block_position.v" -cover bcesx
+"../../rtl/decoder/syntax_parser.v" -cover bcesx
+"../../rtl/decoder/decoding_processor.v" -cover bcesx
+"../../rtl/decoder/transform_mode.v" -cover bcesx
+"../../rtl/decoder/above_pixels_buf.v" -cover bcesx
+"../../rtl/decoder/bp_mode.v" -cover bcesx
+"../../rtl/decoder/dec_rate_control.v" -cover bcesx
+"../../rtl/decoder/masterQp2qp.v" -cover bcesx
+"../../rtl/decoder/decoder_csc.v" -cover bcesx
+"../../rtl/decoder/pixels_buf.v" -cover bcesx
+"../../rtl/decoder/output_buffers.v" -cover bcesx
+"../../rtl/decoder/out_sync_buf.v" -cover bcesx
+"../../rtl/decoder/mpp_mode.v" -cover bcesx
+"../../rtl/decoder/slice_mux.v" -cover bcesx
