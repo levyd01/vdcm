@@ -4,3 +4,4 @@ rnd_image_640x480_8.ppm   # image name
 1.2                       # VDCM_version
 config_444_8bpc_6bpp.cfg  # Config_file_name
 0                         # sliceHeight (0 means no override)
+APB                       # PPS in

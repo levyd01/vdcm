@@ -1,0 +1,11 @@
+*.txt
+work
+vdcm.bits
+golden_image.out.*
+*.log
+wlft*
+output_image.*
+*.vstf
+vsim.wlf
+modelsim.ini
+images/__pycache__

@@ -147,17 +147,21 @@ generate
     assign blkWidth[ci] = blkWidth_p[4*ci+:4];
     assign neighborsAboveLenAdjusted[ci] = neighborsAboveLenAdjusted_p[5*ci+:5];
     assign minPoint[ci] = minPoint_p[14*ci+:14];
-    for (si=0; si<16; si=si+1)
+    for (si=0; si<16; si=si+1) begin : gen_unpack_pquant
       assign pQuant[ci][si] = pQuant_p[ci*16*17+si*17+:17];
+    end
     assign qp[ci] = qp_p[ci*7+:7];
   end
 endgenerate
 
 integer c;
 integer i;
+
 reg signed [13:0] neighborsAbove_from_ram [2:0][15:0]; // spec Fig 4-13: A-4, A-3, A-2, A-1, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11
 always @ (*)
-  for (c=0; c<3; c=c+1)
+  for (c=0; c<3; c=c+1) begin
+    for (i = 0; i < 16; i = i + 1)
+      neighborsAbove_from_ram[c][i] = 14'b0;
     if (c == 0)
       for (i = 0; i < 16; i = i + 1)
         neighborsAbove_from_ram[c][i] = neighborsAbove_rd_p[(16*c + i)*14+:14];
@@ -175,12 +179,12 @@ always @ (*)
           for (i = 0; i < 16; i = i + 1)
             neighborsAbove_from_ram[c][i] = neighborsAbove_rd_p[(16*c + i)*14+:14];
       endcase        
-        
+  end      
 
 reg pResidual_valid;
 reg [2:0] bestIntraPredIdx_dl;
 reg soc_dl;
-always @ (posedge clk or negedge ~rst_n)
+always @ (posedge clk or negedge rst_n)
   if (~rst_n) begin
     bestIntraPredIdx_dl <= 3'd0;
     soc_dl <= 1'b0;
@@ -190,7 +194,7 @@ always @ (posedge clk or negedge ~rst_n)
     soc_dl <= soc;
   end
 reg eoc_dl;
-always @ (posedge clk or negedge ~rst_n)
+always @ (posedge clk or negedge rst_n)
   if (~rst_n) begin
     eoc_dl <= 1'b0;
   end
@@ -198,20 +202,15 @@ always @ (posedge clk or negedge ~rst_n)
     eoc_dl <= eoc;
   end
 
-reg [2:0] resetLeft_dl;
 reg [2:0] fbls_dl;
-always @ (posedge clk or negedge ~rst_n)
-  if (~rst_n) begin
-    resetLeft_dl <= 3'b111;
+always @ (posedge clk or negedge rst_n)
+  if (~rst_n) 
     fbls_dl <= 3'b111;
-  end
-  else if (pQuant_valid) begin
-    resetLeft_dl <= {resetLeft_dl[1:0], resetLeft};
+  else if (pQuant_valid)
     fbls_dl <= {fbls_dl[1:0], fbls};
-  end
 
 reg [2:0] neighborsAbove_valid_dl;
-always @ (posedge clk or negedge ~rst_n)
+always @ (posedge clk or negedge rst_n)
   if (~rst_n) 
     neighborsAbove_valid_dl <= 3'b0;
   else
@@ -229,23 +228,9 @@ always @ (*)
 parameter neighborsLeftLen = 2;
 integer j;
 reg signed [13:0] pReconBlk [2:0][1:0][7:0];
-reg signed [13:0] neighborsLeft [2:0][1:0][neighborsLeftLen-1:0];
-always @ (posedge clk)
-  if (pReconBlk_valid & ~fbls_dl[0]) begin
-    if (resetLeft)
-      for (c=0; c<3; c=c+1)
-        for (j = 0; j < blkHeight[c]; j = j + 1)
-          for (i = 0; i < neighborsLeftLen ; i = i + 1)
-            neighborsLeft[c][j][i] <= predResetLeft[c];
-    else
-      for (c=0; c<3; c=c+1)
-        for (j = 0; j < blkHeight[c]; j = j + 1)
-          for (i = 0; i < neighborsLeftLen ; i = i + 1)
-            neighborsLeft[c][j][i] <= pReconBlk[c][j][blkWidth[c] - neighborsLeftLen + i];
-  end
 
 // Initialize neighbors (above samples) for spatial prediction
-reg signed [13:0] neighborsAbove [2:0][15:0];
+reg signed [13:0] neighborsAbove [2:0][11:0];
 wire resetAbove;
 assign resetAbove = fbls_dl[0];
 parameter neighborsAboveLen = 8;
@@ -254,16 +239,16 @@ integer row;
 always @ (posedge clk)
   for (c=0; c<3; c=c+1)
     if (pResidual_valid & resetAbove)
-      for (col = 0; col < neighborsAboveLenAdjusted[c]; col = col + 1)
+      for (col = 0; col < 12; col = col + 1)
         neighborsAbove[c][col] <= {1'b0, midPoint};
     else if (neighborsAbove_valid)
-      for (col = 0; col < neighborsAboveLenAdjusted[c]; col = col + 1)
+      for (col = 0; col < 12; col = col + 1)
         neighborsAbove[c][col] <= neighborsAbove_from_ram[c][col];
 
-reg signed [13:0] neighborsAbove_from_ram_i [2:0][15:0];
+reg signed [13:0] neighborsAbove_from_ram_i [2:0][11:0];
 always @ (*)
   for (c=0; c<3; c=c+1)
-    for (col = 0; col < neighborsAboveLenAdjusted[c]; col = col + 1)
+    for (col = 0; col < 12; col = col + 1)
       if (neighborsAbove_valid)
         neighborsAbove_from_ram_i[c][col] = neighborsAbove_from_ram[c][col];
       else
@@ -278,8 +263,8 @@ reg signed [14:0] predBlkFbls_d [2:0][1:0][7:0];
 always @ (*)
   for (c=0; c<3; c=c+1) begin
     meanValue[c] = ((csc == 2'd1) & (c > 0)) ? 12'd0 : midPoint;
-    for (row = 0; row < blkHeight[c]; row = row + 1)
-      for (col = 0; col < blkWidth[c]; col = col + 1)
+    for (row = 0; row < 2; row = row + 1)
+      for (col = 0; col < 8; col = col + 1)
         predBlkFbls_d[c][row][col] = $signed({2'b0, meanValue[c]});
   end
 
@@ -297,11 +282,13 @@ always @ (posedge clk)
       case (sel_neighborsAbove_from_ram)
         2'b01: sum_r[c] <= neighborsAbove_from_ram_i[c][0] + neighborsAbove_from_ram_i[c][1];
         2'b10: sum_r[c] <= sum_r[c] + neighborsAbove_from_ram_i[c][2] + neighborsAbove_from_ram_i[c][3];
+        default: sum_r[c] <= sum_r[c];
       endcase
     else
       case (sel_neighborsAbove_from_ram)
         2'b01: sum_r[c] <= neighborsAbove_from_ram_i[c][0] + neighborsAbove_from_ram_i[c][1] + neighborsAbove_from_ram_i[c][4] + neighborsAbove_from_ram_i[c][5];
         2'b10: sum_r[c] <= sum_r[c] + neighborsAbove_from_ram_i[c][2] + neighborsAbove_from_ram_i[c][3] + neighborsAbove_from_ram_i[c][6] + neighborsAbove_from_ram_i[c][7];
+        default: sum_r[c] <= sum_r[c];
       endcase
           
 reg signed [14:0] mean [2:0];
@@ -333,6 +320,8 @@ always @ (posedge clk)
 reg signed [13:0] neighborsAboveForIntra [2:0][15:0]; // other than DC
 always @ (*)
   for (c=0; c<3; c=c+1) begin
+    for (col = 0; col < 16; col = col + 1)
+      neighborsAboveForIntra[c][col] = 14'b0;
     if ((chroma_format > 2'd0) & (c > 0)) begin
       for (col = 0; col < 2; col = col + 1)
         neighborsAboveForIntra[c][col] = neighborsAbove_r[c][col];
@@ -371,24 +360,26 @@ always @ (posedge clk)
   for (c=0; c<3; c=c+1) begin
     if (pDequant_valid)
       if (resetAbove)
-        for (row = 0; row < blkHeight[c]; row = row + 1)
-          for (col = 0; col < blkWidth[c]; col = col + 1)
+        for (row = 0; row < 2; row = row + 1)
+          for (col = 0; col < 8; col = col + 1)
             predBlk[c][row][col] <= predBlkFbls_d[c][row][col];
       else
         case (bestIntraPredIdx_dl)
           INTRA_DC:
             begin
-              for (row = 0; row < blkHeight[c]; row = row + 1)
-                for (col = 0; col < blkWidth[c]; col = col + 1)
-                  predBlk[c][row][col] <= mean[c];
+              for (row = 0; row < 2; row = row + 1)
+                for (col = 0; col < 8; col = col + 1)
+                  if (col < blkWidth[c])
+                    predBlk[c][row][col] <= mean[c];
             end
           INTRA_V:
-            for (row = 0; row < blkHeight[c]; row = row + 1)
-              for (col = 0; col < blkWidth[c]; col = col + 1)
-                if ((chroma_format > 2'd0) & (c > 0))
-                  predBlk[c][row][col] <= neighborsAboveForIntra[c][2+col];
-                else
-                  predBlk[c][row][col] <= neighborsAboveForIntra[c][4+col];
+            for (row = 0; row < 2; row = row + 1)
+              for (col = 0; col < 8; col = col + 1)
+                if ((row < blkHeight[c]) & (col < blkWidth[c]))
+                  if ((chroma_format > 2'd0) & (c > 0))
+                    predBlk[c][row][col] <= neighborsAboveForIntra[c][2+col];
+                  else
+                    predBlk[c][row][col] <= neighborsAboveForIntra[c][4+col];
           INTRA_DR:
             case (chroma_format)
               2'd0: // 4:4:4
@@ -417,40 +408,54 @@ always @ (posedge clk)
                   end
                 end
               2'd1: // 4:2:2
-                for (col = 0; col < blkWidth[c]; col = col + 1) begin
-                  if (soc_dl) begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      if (col == 0) begin
-                        predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= $signed({2'b0, meanValue[c]});
+                for (col = 0; col < 8; col = col + 1)
+                  if (col < blkWidth[c]) begin
+                    if (soc_dl) begin
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        if (col == 0) begin
+                          predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= $signed({2'b0, meanValue[c]});
+                        end
+                        else if (col == 1) begin
+                          predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1]);
+                        end
+                        else if (col == 2) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
+                        end
+                        else begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
+                        end
                       end
-                      else if (col == 1) begin
-                        predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1]);
+                      else begin // Chroma components see spec. page 94
+                        if (col == 0) begin
+                          predBlk[c][0][col] <= Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col]);
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}),
+                                                        $signed({2'b0, meanValue[c]}),
+                                                        Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col]));
+                        end
+                        else if (col == 1) begin
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]);
+                          predBlk[c][1][col] <= Filter3(Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col-1]),
+                                                        neighborsAboveForIntra[c][2+col-1],
+                                                        Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]));
+                        end
+                        else begin
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]);
+                          predBlk[c][1][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col-2], neighborsAboveForIntra[c][2+col-1]),
+                                                        neighborsAboveForIntra[c][2+col-1],
+                                                        Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]));
+                        end
                       end
-                      else if (col == 2) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
-                      end
-                      else begin
+                    end
+                    else begin
+                      if (c == 0) begin // luma component identical to 4:4:4
                         predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
                         predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
                       end
-                    end
-                    else begin // Chroma components see spec. page 94
-                      if (col == 0) begin
-                        predBlk[c][0][col] <= Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col]);
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}),
-                                                      $signed({2'b0, meanValue[c]}),
-                                                      Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col]));
-                      end
-                      else if (col == 1) begin
-                        predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]);
-                        predBlk[c][1][col] <= Filter3(Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col-1]),
-                                                      neighborsAboveForIntra[c][2+col-1],
-                                                      Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]));
-                      end
-                      else begin
+                      else begin // Chroma components see spec. page 94
                         predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]);
                         predBlk[c][1][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col-2], neighborsAboveForIntra[c][2+col-1]),
                                                       neighborsAboveForIntra[c][2+col-1],
@@ -458,66 +463,55 @@ always @ (posedge clk)
                       end
                     end
                   end
-                  else begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
-                    end
-                    else begin // Chroma components see spec. page 94
-                      predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]);
-                      predBlk[c][1][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col-2], neighborsAboveForIntra[c][2+col-1]),
-                                                    neighborsAboveForIntra[c][2+col-1],
-                                                    Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]));
-                    end
-                  end
-                end
               2'd2: // 4:2:0
-                for (col = 0; col < blkWidth[c]; col = col + 1) begin
-                  if (soc_dl) begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      if (col == 0) begin
-                        predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= $signed({2'b0, meanValue[c]});
+                for (col = 0; col < 8; col = col + 1)
+                  if (col < blkWidth[c]) begin
+                    if (soc_dl) begin
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        if (col == 0) begin
+                          predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= $signed({2'b0, meanValue[c]});
+                        end
+                        else if (col == 1) begin
+                          predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1]);
+                        end
+                        else if (col == 2) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
+                        end
+                        else begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
+                        end
                       end
-                      else if (col == 1) begin
-                        predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1]);
+                      else begin // Chroma components see spec. page 96
+                        if (col == 0)
+                          predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}),
+                                                        $signed({2'b0, meanValue[c]}),
+                                                        Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col]));
+                        else if (col == 1)
+                          predBlk[c][0][col] <= Filter3(Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col-1]),
+                                                        neighborsAboveForIntra[c][2+col-1],
+                                                        Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]));
+                        else
+                          predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col-2], neighborsAboveForIntra[c][2+col-1]),
+                                                        neighborsAboveForIntra[c][2+col-1],
+                                                        Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]));
                       end
-                      else if (col == 2) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
-                      end
-                      else begin
+                    end
+                    else begin
+                      if (c == 0) begin // luma component identical to 4:4:4
                         predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
                         predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
                       end
-                    end
-                    else begin // Chroma components see spec. page 96
-                      if (col == 0)
-                        predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}),
-                                                      $signed({2'b0, meanValue[c]}),
-                                                      Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col]));
-                      else if (col == 1)
-                        predBlk[c][0][col] <= Filter3(Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col-1]),
-                                                      neighborsAboveForIntra[c][2+col-1],
-                                                      Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]));
-                      else
+                      else // Chroma components see spec. page 96
                         predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col-2], neighborsAboveForIntra[c][2+col-1]),
                                                       neighborsAboveForIntra[c][2+col-1],
                                                       Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]));
                     end
                   end
-                  else begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
-                    end
-                    else // Chroma components see spec. page 96
-                      predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col-2], neighborsAboveForIntra[c][2+col-1]),
-                                                    neighborsAboveForIntra[c][2+col-1],
-                                                    Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]));
-                  end
-                end
+              default: predBlk[c][0][0] <= 15'b0;
             endcase
           INTRA_DL:
             case (chroma_format)
@@ -547,105 +541,108 @@ always @ (posedge clk)
                   end
                 end
               2'd1: // 4:2:2 
-                for (col = 0; col < blkWidth[c]; col = col + 1) begin
-                  if (eoc_dl) begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      if (col < 5) begin
+                for (col = 0; col < 8; col = col + 1) 
+                  if (col < blkWidth[c]) begin
+                    if (eoc_dl) begin
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        if (col < 5) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                        end
+                        else if (col == 5) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
+                        end
+                        else if (col == 6) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
+                          predBlk[c][1][col] <= neighborsAboveForIntra[c][4+col+1];
+                        end
+                        else begin // col == 7
+                          predBlk[c][0][col] <= neighborsAboveForIntra[c][4+col];
+                          predBlk[c][1][col] <= neighborsAboveForIntra[c][4+col];
+                        end
+                      end
+                      else begin // Chroma components see spec. page 94
+                        if (col < 2) begin
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]);
+                          predBlk[c][1][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]), 
+                                                        neighborsAboveForIntra[c][2+col+1],
+                                                        Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]));
+                        end
+                        else if (col == 2) begin
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]);
+                          predBlk[c][1][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]), 
+                                                        neighborsAboveForIntra[c][2+col+1],
+                                                        neighborsAboveForIntra[c][2+col+1]);
+                        end
+                        else if (col == 3) begin
+                          predBlk[c][0][col] <= neighborsAboveForIntra[c][2+col];
+                          predBlk[c][1][col] <= neighborsAboveForIntra[c][2+col];
+                        end
+                      end
+                    end
+                    else begin
+                      if (c == 0) begin // luma component identical to 4:4:4
                         predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
                         predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
                       end
-                      else if (col == 5) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
-                      end
-                      else if (col == 6) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
-                        predBlk[c][1][col] <= neighborsAboveForIntra[c][4+col+1];
-                      end
-                      else begin // col == 7
-                        predBlk[c][0][col] <= neighborsAboveForIntra[c][4+col];
-                        predBlk[c][1][col] <= neighborsAboveForIntra[c][4+col];
-                      end
-                    end
-                    else begin // Chroma components see spec. page 94
-                      if (col < 2) begin
+                      else begin // Chroma components see spec. page 94
                         predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]);
                         predBlk[c][1][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]), 
                                                       neighborsAboveForIntra[c][2+col+1],
                                                       Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]));
                       end
-                      else if (col == 2) begin
-                        predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]);
-                        predBlk[c][1][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]), 
-                                                      neighborsAboveForIntra[c][2+col+1],
-                                                      neighborsAboveForIntra[c][2+col+1]);
-                      end
-                      else if (col == 3) begin
-                        predBlk[c][0][col] <= neighborsAboveForIntra[c][2+col];
-                        predBlk[c][1][col] <= neighborsAboveForIntra[c][2+col];
-                      end
                     end
                   end
-                  else begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
-                    end
-                    else begin // Chroma components see spec. page 94
-                      predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]);
-                      predBlk[c][1][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]), 
-                                                    neighborsAboveForIntra[c][2+col+1],
-                                                    Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]));
-                    end
-                  end
-                end
               2'd2: // 4:2:0
-                for (col = 0; col < blkWidth[c]; col = col + 1) begin
-                  if (eoc_dl) begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      if (col < 5) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                for (col = 0; col < 8; col = col + 1)
+                  if (col < blkWidth[c]) begin
+                    if (eoc_dl) begin
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        if (col < 5) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                        end
+                        else if (col == 5) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
+                        end
+                        else if (col == 6) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
+                          predBlk[c][1][col] <= neighborsAboveForIntra[c][4+col+1];
+                        end
+                        else begin // col == 7
+                          predBlk[c][0][col] <= neighborsAboveForIntra[c][4+col];
+                          predBlk[c][1][col] <= neighborsAboveForIntra[c][4+col];
+                        end
                       end
-                      else if (col == 5) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
-                      end
-                      else if (col == 6) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
-                        predBlk[c][1][col] <= neighborsAboveForIntra[c][4+col+1];
-                      end
-                      else begin // col == 7
-                        predBlk[c][0][col] <= neighborsAboveForIntra[c][4+col];
-                        predBlk[c][1][col] <= neighborsAboveForIntra[c][4+col];
+                      else begin // Chroma components see spec. page 96
+                        if (col < 2)
+                          predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]), 
+                                                        neighborsAboveForIntra[c][2+col+1],
+                                                        Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]));
+                        else if (col == 2)
+                          predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]), 
+                                                        neighborsAboveForIntra[c][2+col+1],
+                                                        neighborsAboveForIntra[c][2+col+1]);
+                        else if (col == 3)
+                          predBlk[c][0][col] <= neighborsAboveForIntra[c][2+col];
                       end
                     end
-                    else begin // Chroma components see spec. page 96
-                      if (col < 2)
+                    else begin
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        //$display("neighborsAboveForIntra[0][%0d] = %d\tneighborsAboveForIntra[0][%0d] = %d\tneighborsAboveForIntra[0][%0d] = %d", 4+col, neighborsAboveForIntra[c][4+col], 4+col+1, neighborsAboveForIntra[c][4+col+1], 4+col+2, neighborsAboveForIntra[c][4+col+2]);
+                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                        //$display("predBlk[0][0][%0d] = %d", col, Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]));
+                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                      end
+                      else // Chroma components see spec. page 96
                         predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]), 
                                                       neighborsAboveForIntra[c][2+col+1],
                                                       Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]));
-                      else if (col == 2)
-                        predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]), 
-                                                      neighborsAboveForIntra[c][2+col+1],
-                                                      neighborsAboveForIntra[c][2+col+1]);
-                      else if (col == 3)
-                        predBlk[c][0][col] <= neighborsAboveForIntra[c][2+col];
                     end
                   end
-                  else begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      //$display("neighborsAboveForIntra[0][%0d] = %d\tneighborsAboveForIntra[0][%0d] = %d\tneighborsAboveForIntra[0][%0d] = %d", 4+col, neighborsAboveForIntra[c][4+col], 4+col+1, neighborsAboveForIntra[c][4+col+1], 4+col+2, neighborsAboveForIntra[c][4+col+2]);
-                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
-                      //$display("predBlk[0][0][%0d] = %d", col, Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]));
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
-                    end
-                    else // Chroma components see spec. page 96
-                      predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]), 
-                                                    neighborsAboveForIntra[c][2+col+1],
-                                                    Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]));
-                  end
-                end
+              default: predBlk[c][0][0] <= 15'b0;
             endcase
           INTRA_VL:
             case (chroma_format)
@@ -671,83 +668,86 @@ always @ (posedge clk)
                   end
                 end
               2'd1: // 4:2:2
-                for (col = 0; col < blkWidth[c]; col = col + 1) begin
-                  if (eoc_dl) begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      if (col < 6) begin  
-                         predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1]);
-                         predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                for (col = 0; col < 8; col = col + 1)
+                  if (col < blkWidth[c]) begin
+                    if (eoc_dl) begin
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        if (col < 6) begin  
+                           predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1]);
+                           predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                        end
+                        else if (col == 6) begin
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
+                        end
+                        else if (col == 7) begin
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
+                        end   
                       end
-                      else if (col == 6) begin
-                        predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
+                      else begin // Chroma components
+                        if (col < 3) begin
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col],
+                                                        Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]));
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][2+col],
+                                                        Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]),
+                                                        neighborsAboveForIntra[c][2+col+1]);
+                        end
+                        else if (col == 3) begin
+                          predBlk[c][0][col] <= neighborsAboveForIntra[c][2+col];
+                          predBlk[c][1][col] <= neighborsAboveForIntra[c][2+col];
+                        end
                       end
-                      else if (col == 7) begin
-                        predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
-                      end   
                     end
-                    else begin // Chroma components
-                      if (col < 3) begin
+                    else begin
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1]);
+                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                      end
+                      else begin // Chroma components see spec. page 95
                         predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col],
                                                       Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]));
                         predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][2+col],
                                                       Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]),
                                                       neighborsAboveForIntra[c][2+col+1]);
                       end
-                      else if (col == 3) begin
-                        predBlk[c][0][col] <= neighborsAboveForIntra[c][2+col];
-                        predBlk[c][1][col] <= neighborsAboveForIntra[c][2+col];
-                      end
                     end
                   end
-                  else begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1]);
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
-                    end
-                    else begin // Chroma components see spec. page 95
-                      predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col],
-                                                    Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]));
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][2+col],
-                                                    Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]),
-                                                    neighborsAboveForIntra[c][2+col+1]);
-                    end
-                  end
-                end
               2'd2: // 4:2:0
-                for (col = 0; col < blkWidth[c]; col = col + 1) begin
-                  if (eoc_dl) begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      if (col < 6) begin  
-                         predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1]);
-                         predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                for (col = 0; col < 8; col = col + 1)
+                  if (col < blkWidth[c]) begin
+                    if (eoc_dl) begin
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        if (col < 6) begin  
+                           predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1]);
+                           predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
+                        end
+                        else if (col == 6) begin
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
+                        end
+                        else if (col == 7) begin
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
+                        end   
                       end
-                      else if (col == 6) begin
+                      else begin // Chroma components
+                        if (col < 3)
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]);
+                        else if (col == 3) 
+                          predBlk[c][0][col] <= neighborsAboveForIntra[c][2+col];                      
+                      end
+                    end
+                    else begin
+                      if (c == 0) begin // luma component identical to 4:4:4
                         predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
+                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
                       end
-                      else if (col == 7) begin
-                        predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
-                      end   
-                    end
-                    else begin // Chroma components
-                      if (col < 3)
+                      else // Chroma components see spec. page 96
                         predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]);
-                      else if (col == 3) 
-                        predBlk[c][0][col] <= neighborsAboveForIntra[c][2+col];                      
                     end
                   end
-                  else begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1]);
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2]);
-                    end
-                    else // Chroma components see spec. page 96
-                      predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]);
-                  end
-                end
+              default: predBlk[c][0][0] <= 15'b0;
             endcase      
           INTRA_VR:
             case (chroma_format)
@@ -772,31 +772,46 @@ always @ (posedge clk)
                   end
                 end
               2'd1: // 4:2:2
-                for (col = 0; col < blkWidth[c]; col = col + 1) begin
-                  if (soc_dl) begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      if (col == 0) begin
-                        predBlk[c][0][col] <= Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= Filter3($signed({1'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
-                      end
-                      else if (col == 1) begin
-                        predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                for (col = 0; col < 8; col = col + 1)
+                  if (col < blkWidth[c]) begin
+                    if (soc_dl) begin
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        if (col == 0) begin
+                          predBlk[c][0][col] <= Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3($signed({1'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
+                        end
+                        else if (col == 1) begin
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                        end
+                        else begin
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                        end   
                       end
                       else begin
-                        predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                      end   
+                        if (col == 0) begin
+                          predBlk[c][0][col] <= Filter2(Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col]), 
+                                                        neighborsAboveForIntra[c][2+col]);
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}),
+                                                        Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col]),
+                                                        neighborsAboveForIntra[c][2+col]);
+                        end
+                        else begin
+                          predBlk[c][0][col] <= Filter2(Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]), 
+                                                        neighborsAboveForIntra[c][2+col]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][2+col-1],
+                                                        Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]),
+                                                        neighborsAboveForIntra[c][2+col]);
+                        end
+                      end
                     end
                     else begin
-                      if (col == 0) begin
-                        predBlk[c][0][col] <= Filter2(Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col]), 
-                                                      neighborsAboveForIntra[c][2+col]);
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}),
-                                                      Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col]),
-                                                      neighborsAboveForIntra[c][2+col]);
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
                       end
-                      else begin
+                      else begin // Chroma components see spec. page 95
                         predBlk[c][0][col] <= Filter2(Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]), 
                                                       neighborsAboveForIntra[c][2+col]);
                         predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][2+col-1],
@@ -805,53 +820,41 @@ always @ (posedge clk)
                       end
                     end
                   end
-                  else begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                    end
-                    else begin // Chroma components see spec. page 95
-                      predBlk[c][0][col] <= Filter2(Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]), 
-                                                    neighborsAboveForIntra[c][2+col]);
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][2+col-1],
-                                                    Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]),
-                                                    neighborsAboveForIntra[c][2+col]);
-                    end
-                  end
-                end
               2'd2: // 4:2:0
-                for (col = 0; col < blkWidth[c]; col = col + 1) begin
-                  if (soc_dl) begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      if (col == 0) begin
-                        predBlk[c][0][col] <= Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= Filter3($signed({1'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
-                      end
-                      else if (col == 1) begin
-                        predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                for (col = 0; col < 8; col = col + 1)
+                  if (col < blkWidth[c]) begin
+                    if (soc_dl) begin
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        if (col == 0) begin
+                          predBlk[c][0][col] <= Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3($signed({1'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col]);
+                        end
+                        else if (col == 1) begin
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                        end
+                        else begin
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                        end   
                       end
                       else begin
-                        predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                      end   
+                        if (col == 0)
+                          predBlk[c][0][col] <= Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col]);
+                        else
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]);
+                      end
                     end
                     else begin
-                      if (col == 0)
-                        predBlk[c][0][col] <= Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col]);
-                      else
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
+                      end
+                      else // Chroma components see spec. page 96
                         predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]);
                     end
                   end
-                  else begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1], neighborsAboveForIntra[c][4+col]);
-                    end
-                    else // Chroma components see spec. page 96
-                      predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]);
-                  end
-                end
+              default: predBlk[c][0][0] <= 15'b0;
             endcase  
           INTRA_HR:
             case (chroma_format)
@@ -885,46 +888,62 @@ always @ (posedge clk)
                   end
                 end
               2'd1: // 4:2:2
-                for (col = 0; col < blkWidth[c]; col = col + 1) begin
-                  if (soc_dl) begin // Pixel duplication at chunk boundary 
-                    if (c == 0) begin
-                      if (col==0) begin
-                        predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}));
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}));
-                      end
-                      else if (col==1) begin
-                        predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1]);
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}));
-                      end
-                      else if (col==2) begin
-                        predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-2]);
-                      end
-                      else if (col==3) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
+                for (col = 0; col < 8; col = col + 1)
+                  if (col < blkWidth[c]) begin
+                    if (soc_dl) begin // Pixel duplication at chunk boundary 
+                      if (c == 0) begin
+                        if (col==0) begin
+                          predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}));
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}));
+                        end
+                        else if (col==1) begin
+                          predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1]);
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}));
+                        end
+                        else if (col==2) begin
+                          predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-2]);
+                        end
+                        else if (col==3) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
+                        end
+                        else begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-4], neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
+                        end
                       end
                       else begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-4], neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
+                        if (col==0) begin
+                          predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}),
+                                                        $signed({2'b0, meanValue[c]}),
+                                                        Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col]));
+                          predBlk[c][1][col] <= $signed({2'b0, meanValue[c]});
+                        end
+                        else if (col==1) begin
+                          predBlk[c][0][col] <= Filter3(Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col-1]),
+                                                        neighborsAboveForIntra[c][2+col-1],
+                                                        Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]));
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}),
+                                                        Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col-1]),
+                                                        neighborsAboveForIntra[c][2+col-1]);
+                        end
+                        else begin
+                          predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col-2], neighborsAboveForIntra[c][2+col-1]),
+                                                        neighborsAboveForIntra[c][2+col-1],
+                                                        Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]));
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][2+col-2],
+                                                        Filter2(neighborsAboveForIntra[c][2+col-2], neighborsAboveForIntra[c][2+col-1]),
+                                                        neighborsAboveForIntra[c][2+col-1]);
+                        end
                       end
                     end
                     else begin
-                      if (col==0) begin
-                        predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}),
-                                                      $signed({2'b0, meanValue[c]}),
-                                                      Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col]));
-                        predBlk[c][1][col] <= $signed({2'b0, meanValue[c]});
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
+                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-4], neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
                       end
-                      else if (col==1) begin
-                        predBlk[c][0][col] <= Filter3(Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col-1]),
-                                                      neighborsAboveForIntra[c][2+col-1],
-                                                      Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]));
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}),
-                                                      Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col-1]),
-                                                      neighborsAboveForIntra[c][2+col-1]);
-                      end
-                      else begin
+                      else begin // Chroma components see spec. page 95
                         predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col-2], neighborsAboveForIntra[c][2+col-1]),
                                                       neighborsAboveForIntra[c][2+col-1],
                                                       Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]));
@@ -934,65 +953,52 @@ always @ (posedge clk)
                       end
                     end
                   end
-                  else begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-4], neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
-                    end
-                    else begin // Chroma components see spec. page 95
-                      predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col-2], neighborsAboveForIntra[c][2+col-1]),
-                                                    neighborsAboveForIntra[c][2+col-1],
-                                                    Filter2(neighborsAboveForIntra[c][2+col-1], neighborsAboveForIntra[c][2+col]));
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][2+col-2],
-                                                    Filter2(neighborsAboveForIntra[c][2+col-2], neighborsAboveForIntra[c][2+col-1]),
-                                                    neighborsAboveForIntra[c][2+col-1]);
-                    end
-                  end
-                end
               2'd2: // 4:2:0
-                for (col = 0; col < blkWidth[c]; col = col + 1) begin
-                  if (soc_dl) begin // Pixel duplication at chunk boundary 
-                    if (c == 0) begin
-                      if (col==0) begin
-                        predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}));
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}));
-                      end
-                      else if (col==1) begin
-                        predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1]);
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}));
-                      end
-                      else if (col==2) begin
-                        predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-2]);
-                      end
-                      else if (col==3) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
-                        predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
+                for (col = 0; col < 8; col = col + 1)
+                  if (col < blkWidth[c]) begin
+                    if (soc_dl) begin // Pixel duplication at chunk boundary 
+                      if (c == 0) begin
+                        if (col==0) begin
+                          predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}));
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}));
+                        end
+                        else if (col==1) begin
+                          predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-1]);
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}));
+                        end
+                        else if (col==2) begin
+                          predBlk[c][0][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), $signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-2]);
+                        end
+                        else if (col==3) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
+                          predBlk[c][1][col] <= Filter3($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
+                        end
+                        else begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-4], neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
+                        end
                       end
                       else begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-4], neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
+                        if (col==0) begin
+                          predBlk[c][0][col] <= $signed({2'b0, meanValue[c]});
+                        end
+                        else if (col==1)
+                          predBlk[c][0][col] <= Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col-1]);
+                        else
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col-2], neighborsAboveForIntra[c][2+col-1]);
                       end
                     end
                     else begin
-                      if (col==0) begin
-                        predBlk[c][0][col] <= $signed({2'b0, meanValue[c]});
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
+                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-4], neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
                       end
-                      else if (col==1)
-                        predBlk[c][0][col] <= Filter2($signed({2'b0, meanValue[c]}), neighborsAboveForIntra[c][2+col-1]);
-                      else
+                      else // Chroma components see spec. page 96
                         predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col-2], neighborsAboveForIntra[c][2+col-1]);
                     end
                   end
-                  else begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2], neighborsAboveForIntra[c][4+col-1]);
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col-4], neighborsAboveForIntra[c][4+col-3], neighborsAboveForIntra[c][4+col-2]);
-                    end
-                    else // Chroma components see spec. page 96
-                      predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col-2], neighborsAboveForIntra[c][2+col-1]);
-                  end
-                end
+              default: predBlk[c][0][0] <= 15'b0;
             endcase
           INTRA_HL:
             case (chroma_format)
@@ -1026,32 +1032,58 @@ always @ (posedge clk)
                   end
                 end
               2'd1: // 4:2:2
-                for (col = 0; col < blkWidth[c]; col = col + 1) begin
-                  if (eoc_dl) begin // Pixel duplication at chunk boundary
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      if (col < 4) begin  
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+4]);
+                for (col = 0; col < 8; col = col + 1)
+                  if (col < blkWidth[c]) begin
+                    if (eoc_dl) begin // Pixel duplication at chunk boundary
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        if (col < 4) begin  
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+4]);
+                        end
+                        else if (col == 4) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+3]);
+                        end
+                        else if (col == 5) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
+                        end
+                        else if (col == 6) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
+                        end
+                        else if (col == 7) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
+                        end
                       end
-                      else if (col == 4) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+3]);
-                      end
-                      else if (col == 5) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
-                      end
-                      else if (col == 6) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
-                      end
-                      else if (col == 7) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
+                      else begin
+                        if (col < 2) begin
+                          predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]),
+                                                        neighborsAboveForIntra[c][2+col+1],
+                                                        Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]));
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][2+col+1],
+                                                        Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]),
+                                                        neighborsAboveForIntra[c][2+col+2]);
+                        end
+                        else if (col == 2) begin
+                          predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]),
+                                                        neighborsAboveForIntra[c][2+col+1],
+                                                        neighborsAboveForIntra[c][2+col+1]);
+                          predBlk[c][1][col] <= neighborsAboveForIntra[c][2+col+1];
+                        end
+                        else if (col == 3) begin
+                          predBlk[c][0][col] <= neighborsAboveForIntra[c][2+col];
+                          predBlk[c][1][col] <= neighborsAboveForIntra[c][2+col];
+                        end
                       end
                     end
                     else begin
-                      if (col < 2) begin
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+4]);
+                      end
+                      else begin // Chroma components see spec. page 95
                         predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]),
                                                       neighborsAboveForIntra[c][2+col+1],
                                                       Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]));
@@ -1059,76 +1091,53 @@ always @ (posedge clk)
                                                       Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]),
                                                       neighborsAboveForIntra[c][2+col+2]);
                       end
-                      else if (col == 2) begin
-                        predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]),
-                                                      neighborsAboveForIntra[c][2+col+1],
-                                                      neighborsAboveForIntra[c][2+col+1]);
-                        predBlk[c][1][col] <= neighborsAboveForIntra[c][2+col+1];
-                      end
-                      else if (col == 3) begin
-                        predBlk[c][0][col] <= neighborsAboveForIntra[c][2+col];
-                        predBlk[c][1][col] <= neighborsAboveForIntra[c][2+col];
-                      end
                     end
                   end
-                  else begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+4]);
-                    end
-                    else begin // Chroma components see spec. page 95
-                      predBlk[c][0][col] <= Filter3(Filter2(neighborsAboveForIntra[c][2+col], neighborsAboveForIntra[c][2+col+1]),
-                                                    neighborsAboveForIntra[c][2+col+1],
-                                                    Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]));
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][2+col+1],
-                                                    Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]),
-                                                    neighborsAboveForIntra[c][2+col+2]);
-                    end
-                  end
-                end
               2'd2: // 4:2:0
-                for (col = 0; col < blkWidth[c]; col = col + 1) begin
-                  if (eoc_dl) begin // Pixel duplication at chunk boundary
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      if (col < 4) begin  
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+4]);
+                for (col = 0; col < 8; col = col + 1)
+                  if (col < blkWidth[c]) begin
+                    if (eoc_dl) begin // Pixel duplication at chunk boundary
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        if (col < 4) begin  
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+4]);
+                        end
+                        else if (col == 4) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+3]);
+                        end
+                        else if (col == 5) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
+                        end
+                        else if (col == 6) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
+                        end
+                        else if (col == 7) begin
+                          predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
+                          predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
+                        end
                       end
-                      else if (col == 4) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+3]);
-                      end
-                      else if (col == 5) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+2]);
-                      end
-                      else if (col == 6) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+1]);
-                      end
-                      else if (col == 7) begin
-                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
-                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col], neighborsAboveForIntra[c][4+col]);
+                      else begin
+                        if (col < 2)
+                          predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]);
+                        else if (col == 2)
+                          predBlk[c][0][col] <= neighborsAboveForIntra[c][2+col+1];
+                        else if (col == 3)
+                          predBlk[c][0][col] <= neighborsAboveForIntra[c][2+col];
                       end
                     end
                     else begin
-                      if (col < 2)
+                      if (c == 0) begin // luma component identical to 4:4:4
+                        predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
+                        predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+4]);
+                      end
+                      else // Chroma components see spec. page 96
                         predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]);
-                      else if (col == 2)
-                        predBlk[c][0][col] <= neighborsAboveForIntra[c][2+col+1];
-                      else if (col == 3)
-                        predBlk[c][0][col] <= neighborsAboveForIntra[c][2+col];
                     end
                   end
-                  else begin
-                    if (c == 0) begin // luma component identical to 4:4:4
-                      predBlk[c][0][col] <= Filter3(neighborsAboveForIntra[c][4+col+1], neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3]);
-                      predBlk[c][1][col] <= Filter3(neighborsAboveForIntra[c][4+col+2], neighborsAboveForIntra[c][4+col+3], neighborsAboveForIntra[c][4+col+4]);
-                    end
-                    else // Chroma components see spec. page 96
-                      predBlk[c][0][col] <= Filter2(neighborsAboveForIntra[c][2+col+1], neighborsAboveForIntra[c][2+col+2]);
-                  end
-                end
+              default: predBlk[c][0][0] <= 15'b0;
             endcase
         endcase
   end         
@@ -1175,13 +1184,14 @@ reg signed [DEQUANT_WIDTH-1:0] pDequant [2:0][15:0];
 always @ (posedge clk)
   if (pQuant_valid)
     for (c=0; c<3; c=c+1)
-      for (row=0; row<blkHeight[c]; row=row+1)
-        for (col=0; col<blkWidth[c]; col=col+1) begin
-          //$display("pQuant[%0d][%0d] = %d", c, (row * blkWidth[c]) + col, pQuant[c][(row * blkWidth[c]) + col]);
-          //$display("quantTable[%0d][%0d] = %d", c, mapping[c][col], quantTable[c][mapping[c][col]]);
-          //$display("qp[%0d] = %d", c, qp[c]);
-          pDequant[c][(row * blkWidth[c]) + col] <= (pQuant[c][(row * blkWidth[c]) + col] * $signed({1'b0, quantTable[c][mapping[c][col]]})) <<< (qp[c]>>3);
-        end
+      for (row=0; row<2; row=row+1)
+        for (col=0; col<8; col=col+1)
+          if ((row<blkHeight[c]) & (col<blkWidth[c])) begin
+            //$display("pQuant[%0d][%0d] = %d", c, (row * blkWidth[c]) + col, pQuant[c][(row * blkWidth[c]) + col]);
+            //$display("quantTable[%0d][%0d] = %d", c, mapping[c][col], quantTable[c][mapping[c][col]]);
+            //$display("qp[%0d] = %d", c, qp[c]);
+            pDequant[c][(row * blkWidth[c]) + col] <= (pQuant[c][(row * blkWidth[c]) + col] * $signed({1'b0, quantTable[c][mapping[c][col]]})) <<< (qp[c]>>3);
+          end
 always @ (posedge clk)
   pDequant_valid <= pQuant_valid;
 
@@ -1307,40 +1317,48 @@ reg [16:0] unsignedPredResidual_d [2:0][15:0];
 integer s;
 always @ (*)
   for (c=0; c<3; c=c+1) begin
+    for (s=0; s<16; s=s+1)
+      tempArray[c][s] = {(TEMPARRAY_WIDTH+3){1'b0}}; // Default value to avoid inferred latches
+    for (row=0; row<2; row=row+1) 
+      tempArray_in_p[c] = {(8*TEMPARRAY_WIDTH){1'b0}}; // Default value to avoid inferred latches
     //$display("Component %d", c);
     // Haar on columns
-    if (blkHeight[c] == 2'd2)
-      for (col=0; col<blkWidth[c]; col=col+1) begin
-        tempArray[c][col] = pDequant[c][col] + pDequant[c][col + blkWidth[c]];
-        //$display("tempArray[%d][%d] = %d", c, col, tempArray[c][col]);
-        tempArray[c][col + blkWidth[c]] = pDequant[c][col] - pDequant[c][col + blkWidth[c]];
-        //$display("tempArray[%d][%d] = %d", c, col + blkWidth[c], tempArray[c][col + blkWidth[c]]);
-      end
-    else 
-      for (col=0; col<blkWidth[c]; col=col+1)
-        tempArray[c][col] = pDequant[c][col];
+    if (blkHeight[c] == 2'd2) begin
+      for (col=0; col<8; col=col+1)
+        if (col<blkWidth[c]) begin
+          tempArray[c][col] = pDequant[c][col] + pDequant[c][col + blkWidth[c]];
+          //$display("tempArray[%d][%d] = %d", c, col, tempArray[c][col]);
+          tempArray[c][col + blkWidth[c]] = pDequant[c][col] - pDequant[c][col + blkWidth[c]];
+          //$display("tempArray[%d][%d] = %d", c, col + blkWidth[c], tempArray[c][col + blkWidth[c]]);
+        end
+    end
+    else begin 
+      for (col=0; col<8; col=col+1)
+        if (col<blkWidth[c])
+          tempArray[c][col] = pDequant[c][col];
+    end
     // inverse DCT for each row
-    for (row=0; row<blkHeight[c]; row=row+1)
-      if (blkWidth[c] == 4'd4) 
-      begin
-        //$display("Row %d", row);
-        for (k=0; k<4; k=k+1)
-          tempArray_in_p[c][k*TEMPARRAY_WIDTH+:TEMPARRAY_WIDTH] = tempArray[c][row*4+k][TEMPARRAY_WIDTH-1:0];
-        tempArray_out_p[c] = dct4_II_bw_LLM_int(tempArray_in_p[c]);
-        for (k=0; k<4; k=k+1)
-          tempArray[c][row*4+k] = $signed(tempArray_out_p[c][k*(TEMPARRAY_WIDTH+3)+:(TEMPARRAY_WIDTH+3)]);
-      end
-        
-      else // blkWidth[c] == 4'd8
-        begin
+    for (row=0; row<2; row=row+1) begin
+      if (row<blkHeight[c]) begin
+        if (blkWidth[c] == 4'd4) begin
+          //$display("Row %d", row);
+          for (k=0; k<4; k=k+1)
+            tempArray_in_p[c][k*TEMPARRAY_WIDTH+:TEMPARRAY_WIDTH] = tempArray[c][row*4+k][TEMPARRAY_WIDTH-1:0];
+          tempArray_out_p[c] = dct4_II_bw_LLM_int(tempArray_in_p[c]);
+          for (k=0; k<4; k=k+1)
+            tempArray[c][row*4+k] = $signed(tempArray_out_p[c][k*(TEMPARRAY_WIDTH+3)+:(TEMPARRAY_WIDTH+3)]);
+        end
+        else begin// blkWidth[c] == 4'd8
           for (k=0; k<8; k=k+1)
             tempArray_in_p[c][k*TEMPARRAY_WIDTH+:TEMPARRAY_WIDTH] = tempArray[c][row*8+k][TEMPARRAY_WIDTH-1:0];
           tempArray_out_p[c] = dct8_II_bw_LLM_int(tempArray_in_p[c]);
           for (k=0; k<8; k=k+1)
             tempArray[c][row*8+k] = $signed(tempArray_out_p[c][k*(TEMPARRAY_WIDTH+3)+:(TEMPARRAY_WIDTH+3)]);
         end
+      end
+    end
     // Post-shift right by DCT8_2D_UP_SHIFT
-    for (s=0; s<blkHeight[c]*blkWidth[c]; s=s+1) begin
+    for (s=0; s<16; s=s+1) begin
       sign = tempArray[c][s][TEMPARRAY_WIDTH+3-1]; // < 17'sd0;
       absTempArray[c][s] = sign ? -tempArray[c][s] : tempArray[c][s];
       unsignedPredResidual_d[c][s] = (absTempArray[c][s] + 16'd128) >> 8;
@@ -1352,7 +1370,7 @@ reg signed [16:0] pResidual [2:0][15:0]; // predicted residuals, width TBD
 always @ (posedge clk)
   if (pDequant_valid)
     for (c=0; c<3; c=c+1)
-      for (s=0; s<blkHeight[c]*blkWidth[c]; s=s+1)
+      for (s=0; s<16; s=s+1)
         pResidual[c][s] <= pResidual_d[c][s];
 always @ (posedge clk)
   pResidual_valid <= pDequant_valid;
@@ -1379,11 +1397,13 @@ endfunction
 always @ (posedge clk)
   if (pResidual_valid)
     for (c=0; c<3; c=c+1)
-      for (row=0; row<blkHeight[c]; row=row+1)
-        for (col=0; col<blkWidth[c]; col=col+1) begin
-          pReconBlk[c][row][col] <= Clip3(minPoint[c], $signed({1'b0, maxPoint}), predBlk[c][row][col] + pResidual[c][row*blkWidth[c] + col]);
-          //$display("pred+res=%d", $signed({1'b0, predBlk[c][row][col]}) + pResidual[c][row*blkWidth[c] + col]);
-        end
+      for (row=0; row<2; row=row+1)
+        if (row < blkHeight[c])
+          for (col=0; col<8; col=col+1) 
+            if (col<blkWidth[c]) begin
+              pReconBlk[c][row][col] <= Clip3(minPoint[c], $signed({1'b0, maxPoint}), predBlk[c][row][col] + pResidual[c][row*blkWidth[c] + col]);
+              //$display("pred+res=%d", $signed({1'b0, predBlk[c][row][col]}) + pResidual[c][row*blkWidth[c] + col]);
+            end
 always @ (posedge clk)
   pReconBlk_valid <= pResidual_valid;
   

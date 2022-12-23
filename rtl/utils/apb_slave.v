@@ -2,7 +2,7 @@
 
 module apb_slave
 #(
-  parameter NBR_REGS
+  parameter NBR_REGS = 32
 )
 (
   input wire clk_apb,
@@ -15,7 +15,6 @@ module apb_slave
   input wire [31:0] pwdata,
   output wire pready,
   output reg [31:0] prdata,
-  output wire pslverr,
   output wire [32*NBR_REGS-1:0] register_bank_p,
   output wire reg_bank_valid
 );
@@ -56,7 +55,6 @@ always @(negedge rst_n or posedge clk_apb) begin
       ST_W_ENABLE : begin
         // write pwdata to memory
         if (psel & penable & pwrite) begin
-          register_bank[paddr] <= pwdata;
           if (paddr == ADDR_SEND_RB)
             send_reg_bank <= 1'b1;
         end
@@ -77,11 +75,14 @@ always @(negedge rst_n or posedge clk_apb) begin
     endcase
   end
 end 
+always @(posedge clk_apb)
+  if ((apb_st == ST_W_ENABLE) & psel & penable & pwrite)
+    register_bank[paddr] <= pwdata; 
 
 wire send_reg_bank_clk_core;
 synchronizer sync_send_reg_bank_u (.clk(clk_core), .in(send_reg_bank), .out(send_reg_bank_clk_core));
 reg send_reg_bank_clk_core_dl;
-always @(negedge rst_n or posedge clk_core)
+always @(posedge clk_core)
   send_reg_bank_clk_core_dl <= send_reg_bank_clk_core;
 assign reg_bank_valid = send_reg_bank_clk_core & ~send_reg_bank_clk_core_dl;
 

@@ -53,8 +53,8 @@ module substream_demux
 
 );
 
-parameter RATE_BUFF_NUM_LINES = 2**9;
-parameter RATE_BUFF_ADDR_WIDTH = $clog2(RATE_BUFF_NUM_LINES);
+localparam RATE_BUFF_NUM_LINES = 2**9;
+localparam RATE_BUFF_ADDR_WIDTH = $clog2(RATE_BUFF_NUM_LINES);
 
 // Unpack inputs
 genvar gi;
@@ -81,17 +81,17 @@ always @ (posedge clk)
       rate_buffer_addr_w <= rate_buffer_addr_w + 1'b1;
 
 reg w_en;
-reg [255:0] wr_data;  
-integer b; 
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     w_en <= 1'b0;
-  else begin
+  else
     w_en <= in_valid & ~data_in_is_pps;
-    if (in_valid)
-      for(b=0; b<32; b=b+1)
-        wr_data[8*b+:8] = in_data[(31-b)*8+:8];
-  end
+integer b; 
+reg [255:0] wr_data;  
+always @ (posedge clk)
+  if (in_valid)
+    for(b=0; b<32; b=b+1)
+      wr_data[8*b+:8] = in_data[(31-b)*8+:8];
 
 // Convert rc_init_tx_delay from block time to number of in_data input words    
 reg [15:0] initDecodeDelay_i;
@@ -151,16 +151,6 @@ wire [4:0] nextStartOfSliceOffsetInWord;
 assign nextStartOfSliceAddr = (nextStartOfSliceInBytes>>5) & (RATE_BUFF_NUM_LINES-1);
 assign nextStartOfSliceOffsetInWord = nextStartOfSliceInBytes & 5'h1f;
   
-
-wire eos_pulse;
-reg eos_dl;
-always @ (posedge clk)
-  eos_dl <= eos;
-assign eos_pulse = eos & ~eos_dl;
-wire eos_falling_edge;
-assign eos_falling_edge = ~eos & eos_dl;
-
-
 reg [1:0] pos_in_block;
 reg [RATE_BUFF_ADDR_WIDTH-1:0] rate_buffer_addr_r;
 reg nbr_wrap_around_rd;
@@ -231,8 +221,9 @@ always @ (posedge clk or negedge rst_n)
   else
     case (eos_fsm)
       2'd0: if (isLastBlock) eos_fsm <= 2'd1;
-      2'd1: if (/*~(|mux_word_request_i) & ~isLastBlock)*/parse_substreams) eos_fsm <= 2'd2;
+      2'd1: if (parse_substreams) eos_fsm <= 2'd2;
       2'd2: eos_fsm <= 2'b0;
+      default: eos_fsm <= 2'b0;
     endcase
 assign alt_early_eos = (eos_fsm == 2'd2);
 
@@ -284,7 +275,6 @@ always @ (*)
     4'b0011, 4'b0101, 4'b1001, 4'b0110, 4'b1010, 4'b1100: num_mux_word_valid = 4'd2;
     4'b0111, 4'b1011, 4'b1101, 4'b1110: num_mux_word_valid = 4'd3;
     4'b1111: num_mux_word_valid = 4'd4;
-    default: num_mux_word_valid = 4'd0;
   endcase
 
 reg [15:0] byte_cnt;
@@ -347,7 +337,7 @@ always @ (posedge clk)
   alt_nextStartOfSliceOffsetInWord_dl <= nextStartOfSliceOffsetInWord;
 
 integer i;
-parameter MAX_SSM_MAX_SE_SIZE = 160; // 160 bits = 36-bpp maximum for 4:4:4 at 12bpc (see Figure D-6 in spec), per substream
+localparam MAX_SSM_MAX_SE_SIZE = 160; // 160 bits = 36-bpp maximum for 4:4:4 at 12bpc (see Figure D-6 in spec), per substream
 reg [1023:0] commonByteBuffer;
 always @ (posedge clk)
   if (rd_valid)
@@ -420,6 +410,7 @@ always @ (posedge clk)
         6'd30 : commonByteBuffer <= {commonByteBuffer[1024 -30* 8-1:0], rd_data[ 2*8+:30*8]};
         6'd31 : commonByteBuffer <= {commonByteBuffer[1024 -31* 8-1:0], rd_data[ 1*8+:31*8]};
         6'd32 : commonByteBuffer <= {commonByteBuffer[767:0], rd_data};
+        default: commonByteBuffer <= {commonByteBuffer[767:0], rd_data};
       endcase
     
 reg [8:0] commonByteBufferFullness_dl;
@@ -485,16 +476,6 @@ assign ssm_sof = start_decode | (|start_decode_dl[2:0]);
 wire ssm_sof_pulse;
 assign ssm_sof_pulse = start_decode_dl[3];
 
-reg firstSliceOfFrame;
-always @ (posedge clk or negedge rst_n)
-  if (~rst_n)
-    firstSliceOfFrame <= 1'b0;
-  else if (in_sof)
-    firstSliceOfFrame <= 1'b1;
-  else if (eos_pulse)
-    firstSliceOfFrame <= 1'b0;
-
-
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
     pos_in_block <= 2'd0;
@@ -518,7 +499,7 @@ assign mux_word_request[0] = (eos_fsm == 2'b0) & (sos_fsm != SOS_FSM_IDLE) & ((s
 assign mux_word_request[1] = rate_buf_read_allowed & mux_word_request_i[1] & ~mux_word_valid[1] & ((sos_fsm == SOS_FSM_PARSE_SSM0) | (sos_fsm == SOS_FSM_RUNTIME)) & en_mux_word_request;
 assign mux_word_request[2] = rate_buf_read_allowed & mux_word_request_i[2] & ~mux_word_valid[2] & ((sos_fsm == SOS_FSM_PARSE_SSM0) | (sos_fsm == SOS_FSM_RUNTIME)) & en_mux_word_request;
 assign mux_word_request[3] = rate_buf_read_allowed & mux_word_request_i[3] & ~mux_word_valid[3] & ((sos_fsm == SOS_FSM_PARSE_SSM0) | (sos_fsm == SOS_FSM_RUNTIME)) & en_mux_word_request;
-always @ (posedge clk or negedge rst_n) 
+always @ (posedge clk) 
   if (rate_buf_read_allowed)
     mux_word_valid <= mux_word_request;
   else

@@ -29,7 +29,7 @@ module out_sync_buf
   output wire out_sof
 );
 
-parameter ADDR_WIDTH = $clog2(NUMBER_OF_LINES) + 1; // Additional bit to differentiate between empty and full
+localparam ADDR_WIDTH = $clog2(NUMBER_OF_LINES) + 1; // Additional bit to differentiate between empty and full
 
 wire [ADDR_WIDTH-1:0] fifo_size;
 assign fifo_size = (slice_width < 9'd256) ? 8'd128 : (slice_width >> 1);

@@ -150,7 +150,7 @@ block_position_u
 
 wire [9*4-1:0] size_to_remove_p;
 wire size_to_remove_valid;
-parameter MAX_FUNNEL_SHIFTER_SIZE = 2*248 - 1;
+localparam MAX_FUNNEL_SHIFTER_SIZE = 2*248 - 1;
 wire [4*MAX_FUNNEL_SHIFTER_SIZE-1:0] data_to_be_parsed_p;
 wire [3:0] fs_ready;
 wire ssm_sof;
@@ -216,8 +216,8 @@ wire blockBits_valid;
 wire [12:0] prevBlockBitsWithoutPadding;
 wire prevBlockBitsWithoutPadding_valid;
 wire [2:0] bestIntraPredIdx;
-wire [7*4-1:0] bpv2x2_p;
-wire [7*4*2-1:0] bpv2x1_p;
+wire [6*4-1:0] bpv2x2_p;
+wire [6*4*2-1:0] bpv2x1_p;
 wire [3:0] bpvTable;
 wire [1:0] blockCsc;
 wire [3:0] blockStepSize;

@@ -38,8 +38,8 @@ module bp_mode
   input wire neighborsAbove_valid,
   
   input wire [2:0] blockMode,
-  input wire [7*4*2-1:0] bpv2x1_sel_p,
-  input wire [7*4-1:0] bpv2x2_sel_p,
+  input wire [6*4*2-1:0] bpv2x1_sel_p,
+  input wire [6*4-1:0] bpv2x2_sel_p,
   input wire [3:0] bpvTable,
   
   input wire [16*3*17-1:0] pQuant_p,
@@ -70,8 +70,8 @@ genvar bi;
 genvar coli;
 genvar rowi;
 wire [13:0] pReconLeftPix [2:0][1:0][7:0];
-wire [6:0] bpv2x2_sel [3:0];
-wire [6:0] bpv2x1_sel [3:0][1:0];
+wire [5:0] bpv2x2_sel [3:0];
+wire [5:0] bpv2x1_sel [3:0][1:0];
 wire [1:0] partitionSize [2:0];
 wire [4:0] blkWidth [2:0];
 wire [1:0] blkHeight [2:0];
@@ -86,17 +86,22 @@ generate
     for (rowi=0; rowi<2; rowi=rowi+1) begin : gen_in_coli
       for (coli=0; coli<8; coli=coli+1) begin : gen_in_coli
         assign pReconLeftPix[ci][rowi][coli] = pReconLeftBlk_p[(ci*8*2 + rowi*8 + coli)*14+:14];
-        always @ (*)
+        always @ (*) begin
+          pQuant[ci][rowi][coli] = pQuant_p[(ci*8*2 + rowi*8 + coli)*17+:17]; // default
           case (chroma_format)
             2'd0: pQuant[ci][rowi][coli] = pQuant_p[(ci*8*2 + rowi*8 + coli)*17+:17];
             2'd1, 2'd2: // 4:2:2 and 4:2:0
               begin
-                pQuant[0][rowi][coli] = pQuant_p[(rowi*8 + coli)*17+:17];
-                pQuant[1][rowi][coli] = pQuant_p[(16 + rowi*4 + coli)*17+:17];
-                pQuant[2][rowi][coli] = pQuant_p[(32 + rowi*4 + coli)*17+:17];
+                if (ci==0)
+                  pQuant[0][rowi][coli] = pQuant_p[(rowi*8 + coli)*17+:17];
+                else if (ci == 1)
+                  pQuant[1][rowi][coli] = pQuant_p[(16 + rowi*4 + coli)*17+:17];
+                else
+                  pQuant[2][rowi][coli] = pQuant_p[(32 + rowi*4 + coli)*17+:17];
               end
             default: pQuant[ci][rowi][coli] = pQuant_p[(ci*8*2 + rowi*8 + coli)*17+:17];
           endcase 
+        end
       end
     end
     assign partitionSize[ci] = partitionSize_p[2*ci+:2];
@@ -106,20 +111,11 @@ generate
     assign minPoint[ci] = minPoint_p[14*ci+:14];
   end
   for (bi = 0; bi < 4; bi = bi + 1) begin : gen_bpv2x2_sel
-    assign bpv2x2_sel[bi] = bpv2x2_sel_p[7*bi+:7];
-    assign bpv2x1_sel[bi][0] = bpv2x1_sel_p[7*bi*2+:7];
-    assign bpv2x1_sel[bi][1] = bpv2x1_sel_p[7*(bi*2+1)+:7];
+    assign bpv2x2_sel[bi] = bpv2x2_sel_p[6*bi+:6];
+    assign bpv2x1_sel[bi][0] = bpv2x1_sel_p[6*bi*2+:6];
+    assign bpv2x1_sel[bi][1] = bpv2x1_sel_p[6*(bi*2+1)+:6];
   end
 endgenerate
-
-reg soc_dl;
-always @ (posedge clk or negedge rst_n)
-  if (~rst_n)
-    soc_dl <= 1'b1;
-  else if (flush)
-    soc_dl <= 1'b1;
-  else if (qp_valid)
-    soc_dl <= soc;
 
 integer c;
 integer col;
@@ -127,7 +123,11 @@ reg [13:0] searchRangeA [2:0][7:0];
 reg [13:0] searchRangeB [2:0][24:0];
 
 always @ (*)
-  for (c=0; c<3; c=c+1)
+  for (c=0; c<3; c=c+1) begin
+    for (col=0; col<8; col=col+1)
+      searchRangeA[c][col] = 14'b0; // Default
+    for (col=0; col<25; col=col+1)
+      searchRangeB[c][col] = 14'b0; // Default
     if ((chroma_format > 2'd0) & (c > 0)) begin
       for (col=0; col<8; col=col+4) begin
         searchRangeA[c][col>>1] = fbls_dl ? meanValue[c] : neighborsAbove_rd_p[(33*c+ 32-col)*14+:14];
@@ -144,6 +144,7 @@ always @ (*)
       for (col=0; col<25; col=col+1)
         searchRangeB[c][col] = neighborsAbove_rd_p[(33*c + 24-col)*14+:14];
     end
+  end
 
 reg [2:0] blockMode_dl [1:0];
 always @ (posedge clk) begin
@@ -151,11 +152,9 @@ always @ (posedge clk) begin
   blockMode_dl[1] <= blockMode_dl[0];
 end
 
-reg [3:0] bpvTable_dl [1:0];
-always @ (posedge clk) begin
-  bpvTable_dl[0] <= bpvTable;
-  bpvTable_dl[1] <= bpvTable_dl[0];
-end
+reg [3:0] bpvTable_dl;
+always @ (posedge clk) 
+  bpvTable_dl <= bpvTable;
 
 reg [3:0] substreams123_parsed_dl;
 always @ (posedge clk or negedge rst_n)
@@ -190,6 +189,7 @@ always @ (posedge clk or negedge rst_n)
       SOS_FSM_3RD_BLK: if (pReconLeftBlk_valid) sos_fsm <= SOS_FSM_4TH_BLK;
       SOS_FSM_4TH_BLK: if (pReconLeftBlk_valid) sos_fsm <= SOS_FSM_RUN;
       SOS_FSM_RUN: if (sos) sos_fsm <= SOS_FSM_SOS;
+      default: sos_fsm <= SOS_FSM_IDLE;
     endcase
     
 
@@ -369,11 +369,7 @@ always @ (*)
 parameter MODE_BP        = 3'd1;
 parameter MODE_BP_SKIP   = 3'd4;
 
-reg [3:0] pReconLeftBlk_valid_dl;
-always @ (posedge clk)
-  pReconLeftBlk_valid_dl <= {pReconLeftBlk_valid_dl[2:0], pReconLeftBlk_valid};
-  
-// Sample BPV2x2 and bpv2x1
+  // Sample BPV2x2 and bpv2x1
 reg [13:0] bpv2x2_r [2:0][63:0][1:0][1:0];
 reg [13:0] bpv2x1_r [2:0][1:0][63:0][1:0];
 always @ (posedge clk)
@@ -392,17 +388,6 @@ always @ (posedge clk)
               bpv2x2_r[c][b][row][col] <= bpv2x2[c][b][row][col];
               bpv2x1_r[c][row][b][col] <= bpv2x1[c][row][b][col];
             end
-
-reg bpv_ptr;
-always @ (posedge clk)
-  if (~rst_n)
-    bpv_ptr <= 1'b0;
-  else if (flush)
-    bpv_ptr <= 1'b0;
-  else if (pReconLeftBlk_valid_dl[1] & ~substreams123_parsed_dl[0])
-    bpv_ptr <= 1'b1;
-  else if (~pReconLeftBlk_valid_dl[1] & substreams123_parsed_dl[0])
-    bpv_ptr <= 1'b0;
 
 // BpMode::UpdateQp in C
 always @ (posedge clk or negedge rst_n)
@@ -521,38 +506,42 @@ always @ (posedge clk) begin : process_pPredBlk
   if (substreams123_parsed_dl[0] & (blockMode_dl[0] == MODE_BP)) begin
     for (c=0; c<3; c=c+1)
       for (b=0; b<4; b=b+1) 
-        if (bpvTable_dl[0][b]) begin // 2x2
-          for (i=0; i<partitionSize[c]; i=i+1) begin
-            for (row = 0; row < blkHeight[c]; row = row + 1) begin
-              //$display("time: %0t, pQuant[%0d][%0d][%0d] = %d", $realtime, c, row, x0_base[c][b] + i, pQuant[c][row][x0_base[c][b] + i]);
-              //$display("time: %0t, scale[%0d] = %d\toffset[%0d] = %d\tshift[%0d] = %d", $realtime, c, scale[c], c, offset[c], c, shift[c]);
-              iCoeffQClip[c][row][x0_base[c][b] + i] <= DequantSample(pQuant[c][row][x0_base[c][b] + i], scale[c], offset[c], shift[c]);
-              //$display("time: %0t, iCoeffQClip[%0d][%0d][%0d] = %d", $realtime, c, row, x0_base[c][b] + i, DequantSample(pQuant[c][row][x0_base[c][b] + i], scale[c], offset[c], shift[c]));
-              if ((chroma_format > 2'd0) & (c > 0))
-                predBlk[c][row][x0_base[c][b] + i] <= ((bpv2x2_sel[b] >= 7'd32) | ((bpv2x2_sel[b] <= 7'd7) & (row == 1))) ? // Search C
-                                                              bpv2x2_Chroma_422[c-1][(bpv2x2_sel[b] + (bpv2x2_sel[b] >= 7'd32)) >> 1][row] :
-                                                              bpv2x2_r[c][bpv2x2_sel[b]>>1][row][i & 2'b11];
-              else
-                predBlk[c][row][x0_base[c][b] + i] <= ((bpv2x2_sel[b] >= 7'd32) | ((bpv2x2_sel[b] <= 7'd7) & (row == 1))) ? // Search C
-                                                                                      bpv2x2[c][bpv2x2_sel[b]][row][i & 2'b11] :
-                                                                                      bpv2x2_r[c][bpv2x2_sel[b]][row][i & 2'b11];
+        if (bpvTable_dl[b]) begin // 2x2
+          for (i=0; i<2; i=i+1) 
+            if (i<partitionSize[c]) begin
+              for (row = 0; row < 2; row = row + 1) 
+                if (row < blkHeight[c]) begin
+                  //$display("time: %0t, pQuant[%0d][%0d][%0d] = %d", $realtime, c, row, x0_base[c][b] + i, pQuant[c][row][x0_base[c][b] + i]);
+                  //$display("time: %0t, scale[%0d] = %d\toffset[%0d] = %d\tshift[%0d] = %d", $realtime, c, scale[c], c, offset[c], c, shift[c]);
+                  iCoeffQClip[c][row][x0_base[c][b] + i] <= DequantSample(pQuant[c][row][x0_base[c][b] + i], scale[c], offset[c], shift[c]);
+                  //$display("time: %0t, iCoeffQClip[%0d][%0d][%0d] = %d", $realtime, c, row, x0_base[c][b] + i, DequantSample(pQuant[c][row][x0_base[c][b] + i], scale[c], offset[c], shift[c]));
+                  if ((chroma_format > 2'd0) & (c > 0))
+                    predBlk[c][row][x0_base[c][b] + i] <= ((bpv2x2_sel[b] >= 6'd32) | ((bpv2x2_sel[b] <= 6'd7) & (row == 1))) ? // Search C
+                                                                  bpv2x2_Chroma_422[c-1][({1'b0, bpv2x2_sel[b]} + (bpv2x2_sel[b] >= 6'd32)) >> 1][row] :
+                                                                  bpv2x2_r[c][bpv2x2_sel[b]>>1][row][i & 2'b11];
+                  else
+                    predBlk[c][row][x0_base[c][b] + i] <= ((bpv2x2_sel[b] >= 6'd32) | ((bpv2x2_sel[b] <= 6'd7) & (row == 1))) ? // Search C
+                                                                                          bpv2x2[c][bpv2x2_sel[b]][row][i & 1'b1] :
+                                                                                          bpv2x2_r[c][bpv2x2_sel[b]][row][i & 1'b1];
+                end
             end
-          end
         end
         else begin // 2x1
-          for (i=0; i<partitionSize[c]; i=i+1) begin
-            for (row = 0; row < blkHeight[c]; row = row + 1) begin
-              iCoeffQClip[c][row][x0_base[c][b] + i] <= DequantSample(pQuant[c][row][x0_base[c][b] + i], scale[c], offset[c], shift[c]);
-              if ((chroma_format > 2'd0) & (c > 0))
-                predBlk[c][row][x0_base[c][b] + i] <= ((bpv2x1_sel[b][row] >= 7'd32) | ((row == 1) & (bpv2x1_sel[b][row] <= 7'd7))) ? // Search C
-                                                              bpv2x1_Chroma_422[c-1][row][(bpv2x1_sel[b][row] + (bpv2x1_sel[b][row] >= 7'd32)) >> 1] :
-                                                              bpv2x1_r[c][row][bpv2x1_sel[b][row] >> 1][i & 2'b11];
-              else
-                predBlk[c][row][x0_base[c][b] + i] <= ((bpv2x1_sel[b][row] >= 7'd32) | ((row == 1) & (bpv2x1_sel[b][row] <= 7'd7))) ? // Search C
-                                                                                      bpv2x1[c][row][bpv2x1_sel[b][row]][i & 2'b11] : 
-                                                                                      bpv2x1_r[c][row][bpv2x1_sel[b][row]][i & 2'b11];
+          for (i=0; i<partitionSize[c]; i=i+1)
+            if (i<partitionSize[c]) begin
+              for (row = 0; row < 2; row = row + 1) 
+                if (row < blkHeight[c]) begin
+                  iCoeffQClip[c][row][x0_base[c][b] + i] <= DequantSample(pQuant[c][row][x0_base[c][b] + i], scale[c], offset[c], shift[c]);
+                  if ((chroma_format > 2'd0) & (c > 0))
+                    predBlk[c][row][x0_base[c][b] + i] <= ((bpv2x1_sel[b][row] >= 6'd32) | ((row == 1) & (bpv2x1_sel[b][row] <= 6'd7))) ? // Search C
+                                                                  bpv2x1_Chroma_422[c-1][row][({1'b0, bpv2x1_sel[b][row]} + (bpv2x1_sel[b][row] >= 6'd32)) >> 1] :
+                                                                  bpv2x1_r[c][row][bpv2x1_sel[b][row] >> 1][i & 1'b1];
+                  else
+                    predBlk[c][row][x0_base[c][b] + i] <= ((bpv2x1_sel[b][row] >= 6'd32) | ((row == 1) & (bpv2x1_sel[b][row] <= 6'd7))) ? // Search C
+                                                                                          bpv2x1[c][row][bpv2x1_sel[b][row]][i & 1'b1] : 
+                                                                                          bpv2x1_r[c][row][bpv2x1_sel[b][row]][i & 1'b1];
+              end
             end
-          end
         end
   end
 end
@@ -564,15 +553,15 @@ always @ (posedge clk) begin : process_pReconBlk
         for (b=0; b<4; b=b+1) 
           if (bpvTable[b]) begin // 2x2
             for (row=0; row<2; row=row+1)
-              if ((bpv2x2_sel[b] >= 7'd32) | ((bpv2x2_sel[b] <= 7'd7) & (row == 1))) // Search C
-                pReconBlk[c][row][b] <= bpv2x2_Chroma_422[c-1][(bpv2x2_sel[b] + (bpv2x2_sel[b] >= 7'd32)) >> 1][row];
+              if ((bpv2x2_sel[b] >= 6'd32) | ((bpv2x2_sel[b] <= 6'd7) & (row == 1))) // Search C
+                pReconBlk[c][row][b] <= bpv2x2_Chroma_422[c-1][({1'b0, bpv2x2_sel[b]} + (bpv2x2_sel[b] >= 6'd32)) >> 1][row];
               else
                 pReconBlk[c][row][b] <= bpv2x2_r[c][bpv2x2_sel[b] >> 1][row][0];
           end
           else begin // 2x1
             for (row=0; row<2; row=row+1)
-              if ((bpv2x1_sel[b][row] >= 7'd32) | ((row == 1) & (bpv2x1_sel[b][row] <= 7'd7))) // Search C
-                pReconBlk[c][row][b] <= bpv2x1_Chroma_422[c-1][row][(bpv2x1_sel[b][row] + (bpv2x1_sel[b][row] >= 7'd32)) >> 1];
+              if ((bpv2x1_sel[b][row] >= 6'd32) | ((row == 1) & (bpv2x1_sel[b][row] <= 6'd7))) // Search C
+                pReconBlk[c][row][b] <= bpv2x1_Chroma_422[c-1][row][({1'b0, bpv2x1_sel[b][row]} + (bpv2x1_sel[b][row] >= 6'd32)) >> 1];
               else
                 pReconBlk[c][row][b] <= bpv2x1_r[c][row][bpv2x1_sel[b][row] >> 1][0];
           end
@@ -582,7 +571,7 @@ always @ (posedge clk) begin : process_pReconBlk
           if (bpvTable[b]) begin // 2x2
             for (row=0; row<2; row=row+1)
               for (col=0; col<2; col=col+1)
-                if ((bpv2x2_sel[b] >= 7'd32) | ((bpv2x2_sel[b] <= 7'd7) & (row == 1))) // Search C
+                if ((bpv2x2_sel[b] >= 6'd32) | ((bpv2x2_sel[b] <= 6'd7) & (row == 1))) // Search C
                   pReconBlk[c][row][(b<<1) + col] <= bpv2x2[c][bpv2x2_sel[b]][row][col];
                 else
                   pReconBlk[c][row][(b<<1) + col] <= bpv2x2_r[c][bpv2x2_sel[b]][row][col];
@@ -590,7 +579,7 @@ always @ (posedge clk) begin : process_pReconBlk
           else begin // 2x1
             for (row=0; row<2; row=row+1)
               for (col=0; col<2; col=col+1)
-                if ((bpv2x1_sel[b][row] >= 7'd32) | ((row == 1) & (bpv2x1_sel[b][row] <= 7'd7))) // Search C
+                if ((bpv2x1_sel[b][row] >= 6'd32) | ((row == 1) & (bpv2x1_sel[b][row] <= 6'd7))) // Search C
                   pReconBlk[c][row][(b<<1) + col] <= bpv2x1[c][row][bpv2x1_sel[b][row]][col];
                 else
                   pReconBlk[c][row][(b<<1) + col] <= bpv2x1_r[c][row][bpv2x1_sel[b][row]][col];
@@ -600,8 +589,9 @@ always @ (posedge clk) begin : process_pReconBlk
     for (c=0; c<3; c=c+1)
       for (b=0; b<4; b=b+1)
         for (i=0; i<partitionSize[c]; i=i+1) begin
-          for (row = 0; row < blkHeight[c]; row = row + 1)
-            pReconBlk[c][row][x0_base[c][b] + i] <= Clip3(predBlk[c][row][x0_base[c][b] + i] + iCoeffQClip[c][row][x0_base[c][b] + i], minPoint[c], maxPoint);
+          for (row = 0; row < 2; row = row + 1)
+            if (row < blkHeight[c])
+              pReconBlk[c][row][x0_base[c][b] + i] <= Clip3(predBlk[c][row][x0_base[c][b] + i] + iCoeffQClip[c][row][x0_base[c][b] + i], minPoint[c], maxPoint);
         end
   end
 end

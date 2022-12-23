@@ -2,13 +2,13 @@ module sync_dp_ram #(
 	parameter NUMBER_OF_LINES = 16,
 	parameter DATA_WIDTH = 128
 )(
- input clk_w,
- input clk_r,
- input w_en,
- input r_en,
- input [$clog2(NUMBER_OF_LINES)-1:0] addr_w,
- input [$clog2(NUMBER_OF_LINES)-1:0] addr_r,
- input [DATA_WIDTH-1:0] wr_data,
+ input wire clk_w,
+ input wire clk_r,
+ input wire w_en,
+ input wire r_en,
+ input wire [$clog2(NUMBER_OF_LINES)-1:0] addr_w,
+ input wire [$clog2(NUMBER_OF_LINES)-1:0] addr_r,
+ input wire [DATA_WIDTH-1:0] wr_data,
  output reg [DATA_WIDTH-1:0] rd_data,
  output reg mem_valid
 );  

@@ -209,7 +209,7 @@ integer i;
 
 reg [3:0] slices_per_line_1_1;
 wire [$clog2(MAX_SLICE_WIDTH)-3-1:0] numBlocksInLine;
-reg [$clog2(MAX_SLICE_WIDTH)-3+16-1:0] blocksInLine_mult_rcFullnessOffsetThreshold;
+reg [$clog2(MAX_SLICE_WIDTH)-3+10-1:0] blocksInLine_mult_rcFullnessOffsetThreshold;
 reg [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-4-1:0] numBlocksInSlice;
 generate 
   if (PPS_INPUT_METHOD == "IN_BAND") begin : gen_pps_in_band

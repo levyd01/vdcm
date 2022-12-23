@@ -44,12 +44,13 @@ wire signed [13:0] src_y [1:0][7:0];
 wire signed [13:0] src_co [1:0][7:0];
 wire signed [13:0] src_cg [1:0][7:0];
 generate
-  for (gr=0; gr<2; gr=gr+1)
-    for (gc=0; gc<8; gc=gc+1) begin // TBD 4:2:2 and 4:2:0
+  for (gr=0; gr<2; gr=gr+1) begin : gen_src_y_r
+    for (gc=0; gc<8; gc=gc+1) begin : gen_src_y_c
       assign src_y[gr][gc] =  pReconBlk[0][gr][gc];
       assign src_co[gr][gc] = pReconBlk[1][gr][gc];
       assign src_cg[gr][gc] = pReconBlk[2][gr][gc];
     end
+  end
 endgenerate
 
 wire [11:0] dst_r [1:0][7:0];

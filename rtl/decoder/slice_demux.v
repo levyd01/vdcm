@@ -126,11 +126,11 @@ always @ (posedge clk or negedge rst_n)
       if (last_word_of_chunk)
         if (next_byte_offset == 0) begin
           out_valid[active_fifo] <= 1'b1;
-		  for (i = 0; i<32 ;i=i+1)
-		    if (i < 32-byte_offset)
+		      for (i = 0; i<32 ;i=i+1)
+		        if (i < 32-byte_offset)
               out_data[active_fifo][i*8+:8] <= tmp_buf[(i+byte_offset)*8+:8];
-			else
-			  out_data[active_fifo][i*8+:8] <= 8'b0;
+			    else
+			      out_data[active_fifo][i*8+:8] <= 8'b0;
         end
         else begin
           if (byte_offset == 0) begin
@@ -141,67 +141,66 @@ always @ (posedge clk or negedge rst_n)
               else
                 out_data[active_fifo][i*8+:8] <= 8'b0;
 		    if (remainder != 0) begin
-			  out_valid[next_active_fifo] <= 1'b1;
-              for (i = 0; i<32 ;i=i+1)
-                if (i<32-next_byte_offset)
-                  out_data[next_active_fifo][i*8+:8] <= tmp_buf[(i+next_byte_offset)*8+:8];
-                else
-                  out_data[next_active_fifo][i*8+:8] <= in_data[(i-(32-next_byte_offset))*8+:8];
-			end
-          end
-          //else if (byte_offset >= remainder)
-          //  out_valid[active_fifo] <= 1'b0;
-          else begin
-		    out_valid[active_fifo] <= 1'b1;
+			    out_valid[next_active_fifo] <= 1'b1;
+            for (i = 0; i<32 ;i=i+1)
+              if (i<32-next_byte_offset)
+                out_data[next_active_fifo][i*8+:8] <= tmp_buf[(i+next_byte_offset)*8+:8];
+              else
+                out_data[next_active_fifo][i*8+:8] <= in_data[(i-(32-next_byte_offset))*8+:8];
+			  end
+    end
+    //else if (byte_offset >= remainder)
+    //  out_valid[active_fifo] <= 1'b0;
+    else begin
+		  out_valid[active_fifo] <= 1'b1;
 			if (next_byte_offset > byte_offset) begin
-              for (i = 0; i<32 ;i=i+1)
-                if (i<next_byte_offset-byte_offset)
-                  out_data[active_fifo][i*8+:8] <= tmp_buf[(i+byte_offset)*8+:8];
-                else
-                  out_data[active_fifo][i*8+:8] <= 8'b0;
-			  out_valid[next_active_fifo] <= 1'b1;
-              for (i = 0; i<32 ;i=i+1)
-                if (i<32-next_byte_offset)
-                  out_data[next_active_fifo][i*8+:8] <= tmp_buf[(i+next_byte_offset)*8+:8];
-                else
-                  out_data[next_active_fifo][i*8+:8] <= in_data[(i-(32-next_byte_offset))*8+:8];
-			end
-		    else if (byte_cnt + 32 < chunk_size) begin
-			  for (i = 0; i<32 ;i=i+1)
-			    if (i<byte_offset)
-				  out_data[active_fifo][i*8+:8] <= tmp_buf[(i+byte_offset)*8+:8];
-                else
-                  out_data[active_fifo][i*8+:8] <= 8'b0;
-			  out_valid[next_active_fifo] <= 1'b1;
-              for (i = 0; i<32 ;i=i+1)
-                if (i<32-next_byte_offset)
-                  out_data[next_active_fifo][i*8+:8] <= tmp_buf[(i+next_byte_offset)*8+:8];
-                else
-                  out_data[next_active_fifo][i*8+:8] <= in_data[(i-(32-next_byte_offset))*8+:8];
-
-		    end
-		    else
-			  for (i = 0; i<32 ;i=i+1)
-			    if (i<32-byte_offset)
-				  out_data[active_fifo][i*8+:8] <= tmp_buf[(i+byte_offset)*8+:8];
-                else
-                  out_data[active_fifo][i*8+:8] <= in_data[(i-(32-byte_offset))*8+:8];
-          end
-        end
-      else if (~in_sof) begin
-        out_valid[active_fifo] <= 1'b1;
         for (i = 0; i<32 ;i=i+1)
-          if (i<32-byte_offset)
+          if (i<next_byte_offset-byte_offset)
             out_data[active_fifo][i*8+:8] <= tmp_buf[(i+byte_offset)*8+:8];
           else
-            out_data[active_fifo][i*8+:8] <= in_data[(i-(32-byte_offset))*8+:8];
+            out_data[active_fifo][i*8+:8] <= 8'b0;
+			  out_valid[next_active_fifo] <= 1'b1;
+        for (i = 0; i<32 ;i=i+1)
+          if (i<32-next_byte_offset)
+            out_data[next_active_fifo][i*8+:8] <= tmp_buf[(i+next_byte_offset)*8+:8];
+          else
+            out_data[next_active_fifo][i*8+:8] <= in_data[(i-(32-next_byte_offset))*8+:8];
+			end
+		  else if (byte_cnt + 32 < chunk_size) begin
+			  for (i = 0; i<32 ;i=i+1)
+			    if (i<byte_offset)
+				    out_data[active_fifo][i*8+:8] <= tmp_buf[(i+byte_offset)*8+:8];
+          else
+            out_data[active_fifo][i*8+:8] <= 8'b0;
+			  out_valid[next_active_fifo] <= 1'b1;
+        for (i = 0; i<32 ;i=i+1)
+          if (i<32-next_byte_offset)
+            out_data[next_active_fifo][i*8+:8] <= tmp_buf[(i+next_byte_offset)*8+:8];
+          else
+            out_data[next_active_fifo][i*8+:8] <= in_data[(i-(32-next_byte_offset))*8+:8];
+		  end
+		  else
+			for (i = 0; i<32 ;i=i+1)
+			  if (i<32-byte_offset)
+			    out_data[active_fifo][i*8+:8] <= tmp_buf[(i+byte_offset)*8+:8];
+        else
+          out_data[active_fifo][i*8+:8] <= in_data[(i-(32-byte_offset))*8+:8];
+        end
       end
-    end
-    else begin
-      out_data[0] <= in_data;
-      out_valid[0] <= 1'b1;
-    end
+    else if (~in_sof) begin
+      out_valid[active_fifo] <= 1'b1;
+      for (i = 0; i<32 ;i=i+1)
+        if (i<32-byte_offset)
+          out_data[active_fifo][i*8+:8] <= tmp_buf[(i+byte_offset)*8+:8];
+        else
+          out_data[active_fifo][i*8+:8] <= in_data[(i-(32-byte_offset))*8+:8];
   end
+end
+  else begin
+    out_data[0] <= in_data;
+    out_valid[0] <= 1'b1;
+  end
+end
   else
     out_valid <= {MAX_NBR_SLICES{1'b0}};
 

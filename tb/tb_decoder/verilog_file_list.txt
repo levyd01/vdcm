@@ -17,7 +17,6 @@
 "../../rtl/decoder/syntax_parser.v" -cover bcesx
 "../../rtl/decoder/decoding_processor.v" -cover bcesx
 "../../rtl/decoder/transform_mode.v" -cover bcesx
-"../../rtl/decoder/above_pixels_buf.v" -cover bcesx
 "../../rtl/decoder/bp_mode.v" -cover bcesx
 "../../rtl/decoder/dec_rate_control.v" -cover bcesx
 "../../rtl/decoder/masterQp2qp.v" -cover bcesx

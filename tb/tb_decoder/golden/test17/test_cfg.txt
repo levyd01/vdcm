@@ -8,3 +8,4 @@ config_422_8bpc_6bpp.cfg  # Config_file_name
 8                         # bitDepth
 640                       # width
 480                       # height
+IN_BAND                   # PPS in

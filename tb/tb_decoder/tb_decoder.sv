@@ -109,7 +109,6 @@ reg penable;
 reg pselx = 0;
 reg [5:0] paddr;
 reg [31:0] pwdata;
-wire pslverr;
 reg pwrite;
 wire [31:0] prdata;
 wire pready;
@@ -251,7 +250,6 @@ uut
   .pwdata               (pwdata),
   .pready               (pready),
   .prdata               (prdata),
-  .pslverr              (pslverr),
   
   .pixs_out_sof         (pixs_out_sof),
   .pixs_out             (pixs_out),

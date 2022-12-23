@@ -74,7 +74,9 @@ integer c;
 integer col;
 reg signed [13:0] pReconAboveBlk [2:0][7:0];
 always @ (*)
-  for (c = 0; c < 3; c = c + 1)
+  for (c = 0; c < 3; c = c + 1) begin
+    for (col = 0; col < 8; col = col + 1)
+      pReconAboveBlk[c][col] = 14'b0; // Default
     if ((chroma_format > 2'd0) & (c > 0)) 
       for (col = 0; col < 2; col = col + 1) begin
         pReconAboveBlk[c][col<<1] = pReconAboveBlk_p[(c*8 + (col<<2))*14+:14];
@@ -83,6 +85,7 @@ always @ (*)
     else
       for (col = 0; col < 8; col = col + 1)
         pReconAboveBlk[c][col] = pReconAboveBlk_p[(c*8 + col)*14+:14];
+  end
 
 wire [3:0] stepSizeMapCo [11:0];
 assign stepSizeMapCo[0]  = 4'd1;
@@ -197,11 +200,13 @@ always @ (*)
         4'd0: compBits[c] = (~mppfIndex | (blockCsc == 2'd2)) ? mppf_bits_per_comp_R_Y : mppf_bits_per_comp_Y;
         4'd1: compBits[c] = (~mppfIndex | (blockCsc == 2'd2)) ? mppf_bits_per_comp_G_Cb : mppf_bits_per_comp_Co;
         4'd2: compBits[c] = (~mppfIndex | (blockCsc == 2'd2)) ? mppf_bits_per_comp_B_Cr : mppf_bits_per_comp_Cg;
+        default: compBits[c] = 4'd0;
       endcase
       case (bits_per_component_coded)
         2'd0: stepSize[c] = ((blockCsc == 2'd1) & (c > 0)) ? 4'd9 - compBits[c] : 4'd8 - compBits[c];
         2'd1: stepSize[c] = ((blockCsc == 2'd1) & (c > 0)) ? 4'd11 - compBits[c] : 4'd10 - compBits[c];
         2'd2: stepSize[c] = ((blockCsc == 2'd1) & (c > 0)) ? 4'd13 - compBits[c] : 4'd12 - compBits[c];
+        default: stepSize[c] = 4'd0;
       endcase
     end
   end
@@ -219,24 +224,11 @@ always @ (posedge clk or negedge rst_n)
     sos_r <= 1'b0;
 wire sos_streched;
 assign sos_streched = sos | sos_r;
-reg sos_streched_dl;
-always @ (posedge clk or negedge rst_n)
-  if (~rst_n)
-    sos_streched_dl <= 1'b0;
-  else if (flush)
-    sos_streched_dl <= 1'b0;
-  else
-    sos_streched_dl <= sos_streched;
 
 reg [1:0] blockCsc_dl;
 always @ (posedge clk)
   if (mpp_ctrl_valid)
     blockCsc_dl <= blockCsc; 
-    
-reg fbls_dl;
-always @ (posedge clk)
-  if (mpp_ctrl_valid_dl[0])
-    fbls_dl <= fbls;
     
 reg [2:0] blockMode_dl;
 always @ (posedge clk)
@@ -296,6 +288,12 @@ always @ (*)
     
 // Mean before color space conversion
 reg signed [15:0] sumReconLeftBlk [2:0][3:0];
+always @ (*)
+  for (c = 0; c < 3; c = c + 1)
+    for (sb = 0; sb < 4; sb = sb + 1)
+      sumReconLeftBlk[c][sb] = pReconLeftBlk_converted[c][0][sb<<1] + pReconLeftBlk_converted[c][0][(sb<<1)+1] + 
+                                               pReconLeftBlk_converted[c][1][sb<<1] + pReconLeftBlk_converted[c][1][(sb<<1)+1];
+                                               
 reg signed [13:0] mean [2:0][3:0];
 always @ (posedge clk)
   if (mpp_ctrl_valid)
@@ -311,11 +309,8 @@ always @ (posedge clk)
             mean[c][sb] <= 14'd0;
           else if ((chroma_format == 2'd2) & (c > 0)) // 4:2:0 average of only two pixels of row 0
             mean[c][sb] <= (pReconLeftBlk_converted[c][0][sb<<1] + pReconLeftBlk_converted[c][0][(sb<<1)+1]) >>> 1;
-          else begin// Average over all pixels of sub block
-            sumReconLeftBlk[c][sb] = pReconLeftBlk_converted[c][0][sb<<1] + pReconLeftBlk_converted[c][0][(sb<<1)+1] + 
-                                               pReconLeftBlk_converted[c][1][sb<<1] + pReconLeftBlk_converted[c][1][(sb<<1)+1];
-            mean[c][sb] <= sumReconLeftBlk[c][sb] >>> 2;
-          end 
+          else// Average over all pixels of sub block
+            mean[c][sb] <= sumReconLeftBlk[c][sb] >>> 2; 
         else begin // Use above reconstructed pixels (see page 126 of spec)
           if ((chroma_format != 2'd0) & (c > 0) & (sb >= numSubBlocksChroma))
             mean[c][sb] <= 14'd0;
@@ -394,12 +389,16 @@ reg signed [16:0] pDequant [2:0][1:0][7:0];
 always @ (posedge clk)
   if (mpp_ctrl_valid_dl[0])
     for (c = 0; c < 3; c = c + 1)
-      for (row = 0; row < blkHeight[c]; row = row + 1)
-        for (col = 0; col < blkWidth[c]; col = col + 1)
-          if ((chroma_format == 2'd0) | (c == 0))
-            pDequant[c][row][col] <= pQuant[c][row*8+col] << stepSize_dl[c];
-          else
-            pDequant[c][row][col] <= pQuant[c][row*4+col] << stepSize_dl[c];
+      for (row = 0; row < 2; row = row + 1)
+        if (row < blkHeight[c]) begin
+          for (col = 0; col < 8; col = col + 1)
+            if (col < blkWidth[c]) begin
+              if ((chroma_format == 2'd0) | (c == 0))
+                pDequant[c][row][col] <= pQuant[c][row*8+col] << stepSize_dl[c];
+              else
+                pDequant[c][row][col] <= pQuant[c][row*4+col] << stepSize_dl[c];
+            end
+        end
           
 reg signed [13:0] clipMin [2:0];
 always @ (posedge clk)
@@ -409,25 +408,30 @@ always @ (posedge clk)
         2'd0: clipMin[c] <= ((blockCsc_dl == 2'd1) & (c > 0)) ? -14'sd256  : 14'sd0;
         2'd1: clipMin[c] <= ((blockCsc_dl == 2'd1) & (c > 0)) ? -14'sd1024 : 14'sd0;
         2'd2: clipMin[c] <= ((blockCsc_dl == 2'd1) & (c > 0)) ? -14'sd4096 : 14'sd0;
+        default: clipMin[c] <= ((blockCsc_dl == 2'd1) & (c > 0)) ? -14'sd256  : 14'sd0;
       endcase
       
 reg signed [13:0] pReconBlk [2:0][1:0][7:0];
 always @ (posedge clk)
   if (mpp_ctrl_valid_dl[1])
     for (c = 0; c < 3; c = c + 1)
-      for (row = 0; row < blkHeight[c]; row = row + 1)
-        for (col = 0; col < blkWidth[c]; col = col + 1)
-          if ((chroma_format == 2'd0) | (c == 0)) begin
-            //$display("midpoint[%0d][%0d] = %d     pDequant[%0d][%0d][%0d] = %d", c, col>>1, midpoint[c][col>>1], c, row, col, pDequant[c][row][col]);
-            pReconBlk[c][row][col] <= clip3(clipMin[c], {1'b0, maxPoint}, midpoint[c][col>>1] + pDequant[c][row][col]);
-          end
-          else begin
-            //$display("midpoint[%0d][%0d] = %d     pDequant[%0d][%0d][%0d] = %d", c, col>>(blockMode_dl == MODE_MPPF), midpoint[c][col>>(blockMode_dl == MODE_MPPF)], c, row, col, pDequant[c][row][col]);
-            if (blockMode_dl == MODE_MPPF)
-              pReconBlk[c][row][col] <= clip3(clipMin[c], {1'b0, maxPoint}, midpoint[c][col>>1] + pDequant[c][row][col]);
-            else
-              pReconBlk[c][row][col] <= clip3(clipMin[c], {1'b0, maxPoint}, midpoint[c][col] + pDequant[c][row][col]);
-          end
+      for (row = 0; row < 2; row = row + 1)
+        if (row < blkHeight[c]) begin
+          for (col = 0; col < 8; col = col + 1)
+            if (col < blkWidth[c]) begin
+              if ((chroma_format == 2'd0) | (c == 0)) begin
+                //$display("midpoint[%0d][%0d] = %d     pDequant[%0d][%0d][%0d] = %d", c, col>>1, midpoint[c][col>>1], c, row, col, pDequant[c][row][col]);
+                pReconBlk[c][row][col] <= clip3(clipMin[c], {1'b0, maxPoint}, midpoint[c][col>>1] + pDequant[c][row][col]);
+              end
+              else begin
+                //$display("midpoint[%0d][%0d] = %d     pDequant[%0d][%0d][%0d] = %d", c, col>>(blockMode_dl == MODE_MPPF), midpoint[c][col>>(blockMode_dl == MODE_MPPF)], c, row, col, pDequant[c][row][col]);
+                if (blockMode_dl == MODE_MPPF)
+                  pReconBlk[c][row][col] <= clip3(clipMin[c], {1'b0, maxPoint}, midpoint[c][col>>1] + pDequant[c][row][col]);
+                else
+                  pReconBlk[c][row][col] <= clip3(clipMin[c], {1'b0, maxPoint}, midpoint[c][col] + pDequant[c][row][col]);
+              end
+            end
+        end
         
 reg signed [14:0] Co;
 reg signed [14:0] Cg;

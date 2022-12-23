@@ -37,7 +37,6 @@ module vdcm_decoder
   input wire psel,
   input wire penable, // APB signals start
   input wire [31:0] pwdata,
-  output wire pslverr,
   output wire [31:0] prdata,
   output wire pready, // APB signals end
  
@@ -69,7 +68,6 @@ apb_slave_u
   .pwdata               (pwdata),
   .pready               (pready),
   .prdata               (prdata),
-  .pslverr              (pslverr),
   .register_bank_p      (pps_apb),
   .reg_bank_valid       (pps_apb_valid)
 );
@@ -405,7 +403,6 @@ slice_mux_u
   
   .slices_per_line              (slices_per_line),
   .slice_width                  (slice_width),
-  .slice_height                 (slice_height),
   .frame_height                 (frame_height),
   .eoc_valid_pixs               (eoc_valid_pixs),
   

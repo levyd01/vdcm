@@ -59,6 +59,9 @@ always @ (posedge clk)
           2'd1, 2'd2: 
             for (c=0; c<2; c=c+1)
               cscBlk_4pix_even_dl[cp][c] <= cscBlk[cp][0][c+2];
+          default:
+            for (c=0; c<4; c=c+1)
+              cscBlk_4pix_even_dl[cp][c] <= cscBlk[cp][0][c+4];
         endcase
       else
         for (c=0; c<4; c=c+1)
@@ -137,6 +140,7 @@ always @ (posedge clk or negedge rst_n)
       2'd0: if (er_start_read) er_rd_state <= 2'd1;
       2'd1: if (er_addr_rd == er_rd_num_lines/*er_num_lines*/ - 1'b1) er_rd_state <= 2'd2;
       2'd2: if (er_addr_rd == er_rd_num_lines/*er_num_lines*/ - 1'b1) er_rd_state <= 2'b0;
+      default: er_rd_state <= 2'b0;
     endcase
     
 always @ (posedge clk)
@@ -225,6 +229,9 @@ always @ (posedge clk) begin
                 cscBlk_8pix_odd_dl[0][cp][c] <= cscBlk[cp][1][c];
               else
                 cscBlk_8pix_odd_dl[0][cp][2+c] <= cscBlk[cp][1][c];
+          default:
+            for (c=0; c<8; c=c+1)
+              cscBlk_8pix_odd_dl[0][cp][c] <= cscBlk[cp][1][c];
         endcase
       else
         for (c=0; c<8; c=c+1)
@@ -327,7 +334,7 @@ endgenerate
 reg [13:0] out_data [2:0][3:0];
 always @ (posedge clk) begin
   for (cp=0; cp<3; cp=cp+1)
-    for (c=0; c<8; c=c+1)
+    for (c=0; c<4; c=c+1)
       out_data[cp][c] <= er_data_valid ? er_rd_data_p[(c*3+cp)*14+:14] : or_rd_data_p[(c*3+cp)*14+:14];
   out_data_valid <= er_data_valid | or_data_valid;
 end
@@ -341,6 +348,7 @@ always @ (posedge clk or negedge rst_n)
       2'd0: if (sof) sof_out_state <= 2'd1;
       2'd1: if (er_rd_en) sof_out_state <= 2'd2;
       2'd2: sof_out_state <= 2'b0;
+      default: sof_out_state <= 2'b0;
     endcase
 assign out_sof = (sof_out_state == 2'd2);
    

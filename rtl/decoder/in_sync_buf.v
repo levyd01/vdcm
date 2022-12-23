@@ -24,7 +24,7 @@ module in_sync_buf
   output reg out_data_is_pps
 );
 
-parameter ADDR_WIDTH = $clog2(NUMBER_OF_LINES) + 1; // Additional bit to differentiate between empty and full
+localparam ADDR_WIDTH = $clog2(NUMBER_OF_LINES) + 1; // Additional bit to differentiate between empty and full
 
 function [ADDR_WIDTH-1:0] bin2gray;
   input [ADDR_WIDTH-1:0] bin_in;
@@ -114,20 +114,16 @@ sync_dp_ram_u
 
 always @ (posedge clk_rd or negedge rst_n)
   if (~rst_n) begin
-    out_valid <= 1'b0;
     out_sof <= 1'b0;
     out_data_is_pps <= 1'b0;
+    out_eof <= 1'b0;
   end
   else if (flush) begin
-    out_valid <= 1'b0;
     out_sof <= 1'b0;
     out_data_is_pps <= 1'b0;
+    out_eof <= 1'b0;
   end
-  else
-    out_valid <= mem_valid;
-  
-always @ (posedge clk_rd)
-  if (mem_valid) begin
+  else if (mem_valid) begin
     out_data <= rd_data[DATA_WIDTH-1:0];
     out_eof <= rd_data[DATA_WIDTH+1-1];
     out_sof <= rd_data[DATA_WIDTH+2-1];
@@ -138,6 +134,18 @@ always @ (posedge clk_rd)
     out_eof <= 1'b0;
     out_data_is_pps <= 1'b0;
   end
+always @ (posedge clk_rd or negedge rst_n)
+  if (~rst_n)
+    out_valid <= 1'b0;
+  else if (flush)
+    out_valid <= 1'b0;
+  else
+    out_valid <= mem_valid;
+always @ (posedge clk_rd)
+  if (mem_valid)
+    out_data <= rd_data[DATA_WIDTH-1:0];
+
+    
 
 endmodule
   

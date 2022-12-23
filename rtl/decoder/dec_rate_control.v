@@ -222,10 +222,10 @@ always @ (posedge clk)
   else if (blockBits_valid)
     slicePixelsRemaining <= slicePixelsRemaining - 6'sd16;
 
-parameter rcFullnessScaleApproxBits = 4; // Defined in Table 4-12 in spec. Called g_rc_BFScaleApprox in C model
+localparam rcFullnessScaleApproxBits = 4; // Defined in Table 4-12 in spec. Called g_rc_BFScaleApprox in C model
 wire [8+8+9-3-1:0] rcFullnessInit;
 assign rcFullnessInit = (rc_fullness_scale * rcOffsetInitAtSos) >> rcFullnessScaleApproxBits;
-parameter [4:0] rcFullnessRangeBits = 5'd16; // Defined in Table 4-12 in spec. Called g_rc_BFRangeBits in C model
+localparam [4:0] rcFullnessRangeBits = 5'd16; // Defined in Table 4-12 in spec. Called g_rc_BFRangeBits in C model
 reg [15:0] rcFullness;
   
 reg [9:0] prevBlockBits;
@@ -324,7 +324,7 @@ assign unscaledRcFullness = $signed({1'b0, rc_fullness_scale}) * ($signed({1'b0,
 wire signed [1+8+16+1+1-4-1:0] unscaledRcFullnessShifted;
 assign unscaledRcFullnessShifted = unscaledRcFullness >>> 4;
 
-parameter [15:0] max_rcFullness = (1'b1 << 16) - 1'b1;
+localparam [15:0] max_rcFullness = (1'b1 << 16) - 1'b1;
 reg [15:0] rcFullness_d;
 always @ (*)
   if (sos_pulse) begin
@@ -373,11 +373,11 @@ always @ (posedge clk)
 wire [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-1:0] pOffset;
 assign pOffset = 1'b1 << (targetRateScale - 1'b1);
 
-parameter [2:0] targetRateBaseBits = 3'd6; // Table 4.17 of spec. Called g_rc_targetRateLutScaleBits in C model
+localparam [2:0] targetRateBaseBits = 3'd6; // Table 4.17 of spec. Called g_rc_targetRateLutScaleBits in C model
 wire  [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)+6-1:0] pTemp;
 assign pTemp = slicePixelsRemaining << targetRateBaseBits;
 
-parameter [5:0] pMax = (1'b1 << targetRateBaseBits) - 1'b1;
+localparam [5:0] pMax = (1'b1 << targetRateBaseBits) - 1'b1;
 reg [5:0] p;
 reg [$clog2(MAX_SLICE_HEIGHT)+16+8+4-1:0] baseTargetRateTemp;
 
@@ -419,6 +419,7 @@ always @ (*) begin
     6'd61: baseTargetRateTemp = (sliceBitsRemaining *  8'd66) << 4;
     6'd62: baseTargetRateTemp = (sliceBitsRemaining *  8'd65) << 4;
     6'd63: baseTargetRateTemp = (sliceBitsRemaining *  8'd64) << 4;
+    default: baseTargetRateTemp = (sliceBitsRemaining *  8'd64) << 4;
   endcase
 end
 
@@ -436,14 +437,14 @@ always @ (*)
   else
     baseTargetRate = (baseTargetRateTemp + offset) >> scale;
 
-parameter [2:0] targetRateLutBits = 3'd4; // Defined in Table 4-17 in spec. Called g_rc_targetRateBits in C model
-parameter [4:0] targetRateShift = rcFullnessRangeBits - targetRateLutBits; // Called shift in spec Table 4-18.
+localparam [2:0] targetRateLutBits = 3'd4; // Defined in Table 4-17 in spec. Called g_rc_targetRateBits in C model
+localparam [4:0] targetRateShift = rcFullnessRangeBits - targetRateLutBits; // Called shift in spec Table 4-18.
 wire [16:0] rcFullnessPlusDelta;
 assign rcFullnessPlusDelta = rcFullness_d + (1'b1 << (targetRateShift - 1'b1));
 wire [4:0] LutTargetRateDeltaIndexTemp;
 assign LutTargetRateDeltaIndexTemp[4:0] = rcFullnessPlusDelta >> targetRateShift;
 
-parameter [3:0] clipMax = (1'b1 << targetRateLutBits) - 1'b1;
+localparam [3:0] clipMax = (1'b1 << targetRateLutBits) - 1'b1;
 reg [3:0] LutTargetRateDeltaIndex;
 always @ (*) 
   if (LutTargetRateDeltaIndexTemp > clipMax)
@@ -451,7 +452,7 @@ always @ (*)
   else
     LutTargetRateDeltaIndex = LutTargetRateDeltaIndexTemp;
 
-reg [15:0] targetRate;
+reg [13:0] targetRate;
 always @ (posedge clk) 
   if (blockBits_valid_dl[0] | sos)
     targetRate <= baseTargetRate + target_rate_delta_lut[LutTargetRateDeltaIndex];
@@ -616,7 +617,6 @@ always @ (*)
               qpFlatnessAdjusted = lutFlatnessQpSelected;
             else
               qpFlatnessAdjusted = qpClamped;
-      default: qpFlatnessAdjusted = qpClamped;
     endcase
   else
     qpFlatnessAdjusted = qpClamped;
@@ -641,6 +641,7 @@ always @ (posedge clk)
       2'd0: /* 4:4:4 */ qp <= 8'sd36;
       2'd1: /* 4:2:2 */ qp <= 8'sd30;
       2'd2: /* 4:2:0 */ qp <= 8'sd32;
+      default: qp <= 8'sd36;
     endcase
   else if (blockBits_valid_dl[2])
     qp <= qpFirstLineAdjusted;

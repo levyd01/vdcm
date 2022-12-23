@@ -8,3 +8,4 @@ config_420_10bpc_12bpp.cfg # Config_file_name
 10                        # bitDepth
 640                       # width
 400                       # height
+IN_BAND                   # PPS in

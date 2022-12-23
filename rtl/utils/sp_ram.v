@@ -2,11 +2,11 @@ module sp_ram #(
 	parameter NUMBER_OF_LINES = 8192,
 	parameter DATA_WIDTH = 128
 )(
-  input clk,
-  input cs,
-  input w_en,
-  input [$clog2(NUMBER_OF_LINES)-1:0] addr,
-  input [DATA_WIDTH-1:0] wr_data,
+  input wire clk,
+  input wire cs,
+  input wire w_en,
+  input wire [$clog2(NUMBER_OF_LINES)-1:0] addr,
+  input wire [DATA_WIDTH-1:0] wr_data,
   output reg [DATA_WIDTH-1:0] rd_data,
   output reg mem_valid
 );  

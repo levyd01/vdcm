@@ -1,7 +1,7 @@
 module synchronizer
 (
-  input clk,
-  input in,
+  input wire clk,
+  input wire in,
   output wire out
 );
 

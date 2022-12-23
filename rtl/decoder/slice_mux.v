@@ -12,7 +12,6 @@ module slice_mux
   
   input wire [9:0] slices_per_line,
   input wire [$clog2(MAX_SLICE_WIDTH)-1:0] slice_width,
-  input wire [$clog2(MAX_SLICE_HEIGHT)-1:0] slice_height,
   input wire [15:0] frame_height,
   input wire [3:0] eoc_valid_pixs,
   
@@ -64,17 +63,6 @@ always @ (posedge clk_out_int or negedge rst_n)
       mem_rd_sel <= mem_rd_sel + 1'b1;
 
 reg eof_rd;
-reg [$clog2(MAX_SLICE_HEIGHT)-1:0] line_cnt_rd;
-always @ (posedge clk_out_int or negedge rst_n)
-  if (~rst_n)
-    line_cnt_rd <= {$clog2(MAX_SLICE_HEIGHT){1'b0}};
-  else if (mem_rd_sof[0])
-    line_cnt_rd <= {$clog2(MAX_SLICE_HEIGHT){1'b0}};
-  else if (rd_eoc[slices_per_line-1] & mem_rd_en[slices_per_line-1])
-    if (line_cnt_rd == slice_height - 1'b1) 
-      line_cnt_rd <= {$clog2(MAX_SLICE_HEIGHT){1'b0}};
-    else
-      line_cnt_rd <= line_cnt_rd + 1'b1;
       
 reg [15:0] line_cnt_until_eof;   
 always @ (posedge clk_out_int or negedge rst_n)
@@ -105,10 +93,10 @@ always @ (posedge clk_out_int or negedge rst_n)
     eol_rd <= 1'b0;
 
 
-parameter ADDR_WIDTH = $clog2(((MAX_SLICE_WIDTH>>2))+4);
+localparam ADDR_WIDTH = $clog2(((MAX_SLICE_WIDTH>>2))+4);
 
 reg [$clog2(MAX_NBR_SLICES)-1:0] mem_rd_sel_dl [1:0];
-always @ (posedge clk_out_int or negedge rst_n) begin
+always @ (posedge clk_out_int) begin
   mem_rd_sel_dl[0] <= mem_rd_sel;
   mem_rd_sel_dl[1] <= mem_rd_sel_dl[0];
 end
@@ -304,6 +292,7 @@ always @ (posedge clk_out_int or negedge rst_n)
       4'd2: pixs_out_valid <= 4'b0011;
       4'd3: pixs_out_valid <= 4'b0111;
       4'd4: pixs_out_valid <= 4'b1111;
+      default: pixs_out_valid <= 4'b0001;
     endcase
   else if ((eoc_valid_pixs >= 4'd5) & secondPartOfLastBlockOfChunk & mem_rd_valid[mem_rd_sel_dl[0]]) // last pixel is in second part of the last block
     case (eoc_valid_pixs)
@@ -311,6 +300,7 @@ always @ (posedge clk_out_int or negedge rst_n)
       4'd6: pixs_out_valid <= 4'b0011;
       4'd7: pixs_out_valid <= 4'b0111;
       4'd8: pixs_out_valid <= 4'b1111;
+      default: pixs_out_valid <= 4'b0001;
     endcase
   else if (mem_rd_valid[mem_rd_sel_dl[0]] & ~(secondPartOfLastBlockOfChunk & (eoc_valid_pixs <= 4'd4))) // disable valid when the last pixel of the chunk is in the first part of the block
     pixs_out_valid <= 4'b1111;

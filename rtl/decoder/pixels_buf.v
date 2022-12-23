@@ -35,8 +35,8 @@ module pixels_buf
   input wire pReconBlk_valid,
   input wire [2*8*3*14-1:0] pReconBlk_p,
   
-  input decoding_proc_rd_req,
-  input block_push,
+  input wire decoding_proc_rd_req,
+  input wire block_push,
   output wire [16*3*14-1:0] pixelsAboveForTrans_p, // 16 pixels for Transform (4 to the left above the current, 8 exactly above, and 4 to the right above)
   output wire [33*3*14-1:0] pixelsAboveForBp_p, // 33 pixels above for BP (A0 to A7 and B0 to B24)
   output wire [8*3*14-1:0] pixelsAboveForMpp_p, // 8 pixels above for MPP (for non-FBLS mean calculation)
@@ -114,11 +114,13 @@ always @ (posedge clk)
   if (|pReconBlk_valid_dl[3:2])
     for (cp=0; cp<3; cp=cp+1) begin
       if ((chroma_format > 2'd0) & (cp > 0)) begin
-        for (ci=colIndexStart>>1; ci<((colIndexStart>>1)+2); ci=ci+1) 
-          csc_lb_data_wr[cp][ci-(colIndexStart>>1)] <= rgb_reg[cp][ci];
+        for (ci=0; ci<8; ci=ci+1)
+          if ((ci >= colIndexStart>>1) & (ci < ((colIndexStart>>1)+2)))
+            csc_lb_data_wr[cp][ci-(colIndexStart>>1)] <= rgb_reg[cp][ci];
       end
       else
-        for (ci=colIndexStart; ci<(colIndexStart+4); ci=ci+1) 
+        for (ci=0; ci<8; ci=ci+1) 
+          if ((ci >= colIndexStart) & (ci<(colIndexStart+4)))
           csc_lb_data_wr[cp][ci-colIndexStart] <= rgb_reg[cp][ci];
     end
         
@@ -126,7 +128,8 @@ integer dl;
 reg [11:0] csc_lb_data_wr_dl [1:0][2:0][3:0]; // data to save to RAM delayed to avoid wr and rd on same cycles
 always @ (posedge clk)
     for (cp=0; cp<3; cp=cp+1)
-      for (ci=colIndexStart; ci<(colIndexStart+4); ci=ci+1) begin
+      for (ci=0; ci<8; ci=ci+1)
+        if ((ci >= colIndexStart) & (ci<(colIndexStart+4))) begin
         csc_lb_data_wr_dl[0][cp][ci-colIndexStart] <= csc_lb_data_wr[cp][ci-colIndexStart];
         csc_lb_data_wr_dl[1][cp][ci-colIndexStart] <= csc_lb_data_wr_dl[0][cp][ci-colIndexStart];
       end
@@ -145,7 +148,7 @@ generate
   end
 endgenerate
 
-parameter ADDR_WIDTH = $clog2((MAX_SLICE_WIDTH>>2)+1);
+localparam ADDR_WIDTH = $clog2((MAX_SLICE_WIDTH>>2)+1);
 
 reg sof;
 always @ (posedge clk or negedge rst_n)
@@ -246,17 +249,18 @@ generate
   end
 endgenerate
 
-reg [1:0] ram_data_valid_dl;
+reg ram_data_valid_dl;
 always @ (posedge clk)
-  ram_data_valid_dl <= {ram_data_valid_dl[0], ram_data_valid};
+  ram_data_valid_dl <= ram_data_valid;
   
-reg signed [13:0] pixelsShiftReg [2:0][39:0];
+localparam PIXELS_FIFO_SIZE = 40;
+reg signed [13:0] pixelsShiftReg [2:0][PIXELS_FIFO_SIZE-1:0];
 always @ (posedge clk)
-  if (ram_data_valid_dl[0])
+  if (ram_data_valid_dl)
     for (c = 0; c < 3; c = c + 1) begin
       for (p = 0; p < 4; p = p + 1) 
         pixelsShiftReg[c][3-p] <= pixelForDecodingProc[c][p];
-      for (p = 4; p < 40; p = p + 1)
+      for (p = 4; p < PIXELS_FIFO_SIZE; p = p + 1)
         pixelsShiftReg[c][p] <= pixelsShiftReg[c][p - 4];    
     end
 
@@ -311,8 +315,6 @@ always @ (posedge clk or negedge rst_n)
     wrap_rd <= ~wrap_rd;
 
 assign decoding_proc_rd_valid = rd_active & ((decoding_proc_rd_req_dl[3] & ~push) | parse_substreams);
-
-parameter PIXELS_FIFO_SIZE = 48;
 
 reg [13:0] fifo [3:0][2:0][PIXELS_FIFO_SIZE-1:0];
 always @ (posedge clk)

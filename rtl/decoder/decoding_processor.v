@@ -34,8 +34,8 @@ module decoding_processor
   input wire [2:0] blockMode,
   input wire [2:0] prevBlockMode,
   input wire [2:0] bestIntraPredIdx,
-  input wire [7*4-1:0] bpv2x2_sel_p,
-  input wire [7*4*2-1:0] bpv2x1_sel_p,
+  input wire [6*4-1:0] bpv2x2_sel_p,
+  input wire [6*4*2-1:0] bpv2x1_sel_p,
 
   input wire [3:0] bpvTable,
   input wire underflowPreventionMode,
@@ -254,11 +254,11 @@ mpp_mode mpp_mode_u
 
 // Mux between all modes
 // Table 4-80 in spec
-parameter MODE_TRANSFORM = 3'd0;
-parameter MODE_BP        = 3'd1;
-parameter MODE_MPP       = 3'd2;
-parameter MODE_MPPF      = 3'd3;
-parameter MODE_BP_SKIP   = 3'd4;
+localparam MODE_TRANSFORM = 3'd0;
+localparam MODE_BP        = 3'd1;
+localparam MODE_MPP       = 3'd2;
+localparam MODE_MPPF      = 3'd3;
+localparam MODE_BP_SKIP   = 3'd4;
 always @ (*)
   case (prevBlockMode)
     MODE_TRANSFORM:        pReconBlk_p = tm_pReconBlk_p;
