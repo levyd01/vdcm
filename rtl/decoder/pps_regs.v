@@ -209,7 +209,7 @@ integer i;
 
 reg [3:0] slices_per_line_1_1;
 wire [$clog2(MAX_SLICE_WIDTH)-3-1:0] numBlocksInLine;
-reg [$clog2(MAX_SLICE_WIDTH)-3+10-1:0] blocksInLine_mult_rcFullnessOffsetThreshold;
+reg [$clog2(MAX_SLICE_WIDTH)-3+9-1:0] blocksInLine_mult_rcFullnessOffsetThreshold;
 reg [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)-4-1:0] numBlocksInSlice;
 generate 
   if (PPS_INPUT_METHOD == "IN_BAND") begin : gen_pps_in_band
@@ -282,6 +282,7 @@ generate
                   4'd2: slice_pad_x <= 4'd8 - ((frame_width>>1) & 3'b111);
                   4'd4: slice_pad_x <= 4'd8 - ((frame_width>>2) & 3'b111);
                   4'd8: slice_pad_x <= 4'd8 - ((frame_width>>3) & 3'b111);
+                  default: slice_pad_x <= 4'd8 - (frame_width      & 3'b111);
                 endcase
               end
               mpp_min_step_size <= in_data_gated[7*8+:4];
@@ -520,6 +521,7 @@ always @ (posedge clk)
       2'd0: maxPoint <= (1'b1 << 8) - 1'b1;
       2'd1: maxPoint <= (1'b1 << 10) - 1'b1;
       2'd2: maxPoint <= (1'b1 << 12) - 1'b1;
+      default: maxPoint <= (1'b1 << 8) - 1'b1;
     endcase
     for (c = 0; c < 3; c = c + 1)
       if ((csc == 2'd1) & (c > 0))
@@ -527,6 +529,7 @@ always @ (posedge clk)
           2'd0: minPoint[c] <= ~((1'b1 << 8) - 1'b1);
           2'd1: minPoint[c] <= ~((1'b1 << 10) - 1'b1);
           2'd2: minPoint[c] <= ~((1'b1 << 12) - 1'b1);
+          default: minPoint[c] <= ~((1'b1 << 8) - 1'b1);
         endcase
       else
         minPoint[c] <= 14'sd0;
@@ -536,6 +539,7 @@ always @ (posedge clk)
       2'd0: minQp <= 7'sd16;
       2'd1: minQp <= 7'sd0;
       2'd2: minQp <= -7'sd16;
+      default: minQp <= 7'sd16;
     endcase
   end
     

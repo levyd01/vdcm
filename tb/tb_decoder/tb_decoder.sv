@@ -85,7 +85,7 @@ reg in_valid = 1'b0;
 reg in_pps_valid = 1'b0;
 reg [255:0] in_data = 256'hx;
 reg in_data_is_pps = 1'b0;
-reg [128*8-1:0] in_pps = 1024'hx;
+reg [128*8-1:0] in_pps = 1024'hx; 
 reg [128*8-1:0] pps;
 integer w;
 reg [255:0] tmp_data;
@@ -126,7 +126,9 @@ initial begin
   cread = $fread(pps_rev, file_vdcm_bits);
   for(b=0; b<128; b=b+1)
     pps[8*b+:8] = pps_rev[(127-b)*8+:8];
-
+  
+  in_pps = 1024'h0; // Force 0s when PPS input method is not DIRECT (for synthesis)
+  in_pps_valid = 1'b0;
   // Send PPS in 4 bursts of 256 bits each
   if (PPS_INPUT_METHOD == "IN_BAND")
     for (w=0; w<4; w=w+1) begin

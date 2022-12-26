@@ -131,9 +131,9 @@ function signed [13:0] clip3;
   input signed [13:0] max;
   input signed [15:0] unclipped;
   begin
-    if (unclipped > max)
+    if (unclipped > $signed({max[13], max[13], max}))
       clip3 = max;
-    else if (unclipped < min)
+    else if (unclipped < $signed({min[13], min[13], min}))
       clip3 = min;
     else
       clip3 = unclipped[13:0];
@@ -238,20 +238,18 @@ always @ (posedge clk)
 // If current block CSC is RGB, convert reconstructed block to RGB
 wire [11:0] pReconLeftBlk_rgb [2:0][1:0][7:0];
 generate
-  for (ci=0; ci<3; ci=ci+1) begin : gen_reconleft_rgb_comp
-    for (rowi=0; rowi<2; rowi=rowi+1) begin : gen_reconleft_rgb_rowi
-      for (coli=0; coli<8; coli=coli+1) begin : gen_reconleft_rgb_coli
-        ycocg2rgb ycocg2rgb_u
-          (
-            .maxPoint         (maxPoint),
-            .src_y            (pReconLeftBlk[0][rowi][coli]),
-            .src_co           (pReconLeftBlk[1][rowi][coli]),
-            .src_cg           (pReconLeftBlk[2][rowi][coli]),
-            .dst_r            (pReconLeftBlk_rgb[0][rowi][coli]),
-            .dst_g            (pReconLeftBlk_rgb[1][rowi][coli]),
-            .dst_b            (pReconLeftBlk_rgb[2][rowi][coli])
-          );
-      end
+  for (rowi=0; rowi<2; rowi=rowi+1) begin : gen_reconleft_rgb_rowi
+    for (coli=0; coli<8; coli=coli+1) begin : gen_reconleft_rgb_coli
+      ycocg2rgb ycocg2rgb_u
+        (
+          .maxPoint         (maxPoint),
+          .src_y            (pReconLeftBlk[0][rowi][coli]),
+          .src_co           (pReconLeftBlk[1][rowi][coli]),
+          .src_cg           (pReconLeftBlk[2][rowi][coli]),
+          .dst_r            (pReconLeftBlk_rgb[0][rowi][coli]),
+          .dst_g            (pReconLeftBlk_rgb[1][rowi][coli]),
+          .dst_b            (pReconLeftBlk_rgb[2][rowi][coli])
+        );
     end
   end
 endgenerate
@@ -265,19 +263,17 @@ always @ (*)
 
 wire [11:0] pReconAboveBlk_rgb [2:0][7:0];
 generate
-  for (ci=0; ci<3; ci=ci+1) begin : gen_reconabove_rgb_comp
-    for (coli=0; coli<8; coli=coli+1) begin : gen_reconabove_rgb_coli
-      ycocg2rgb ycocg2rgb_u
-        (
-          .maxPoint         (maxPoint),
-          .src_y            (pReconAboveBlk[0][coli]),
-          .src_co           (pReconAboveBlk[1][coli]),
-          .src_cg           (pReconAboveBlk[2][coli]),
-          .dst_r            (pReconAboveBlk_rgb[0][coli]),
-          .dst_g            (pReconAboveBlk_rgb[1][coli]),
-          .dst_b            (pReconAboveBlk_rgb[2][coli])
-        );
-    end
+  for (coli=0; coli<8; coli=coli+1) begin : gen_reconabove_rgb_coli
+    ycocg2rgb ycocg2rgb_u
+      (
+        .maxPoint         (maxPoint),
+        .src_y            (pReconAboveBlk[0][coli]),
+        .src_co           (pReconAboveBlk[1][coli]),
+        .src_cg           (pReconAboveBlk[2][coli]),
+        .dst_r            (pReconAboveBlk_rgb[0][coli]),
+        .dst_g            (pReconAboveBlk_rgb[1][coli]),
+        .dst_b            (pReconAboveBlk_rgb[2][coli])
+      );
   end
 endgenerate
 reg signed [13:0] pReconAboveBlk_converted [2:0][7:0];
@@ -325,18 +321,16 @@ always @ (posedge clk)
 genvar sbi;
 wire [13:0] mean_ycocg [2:0][3:0];
 generate
-  for (ci=0; ci<3; ci=ci+1) begin : gen_mean_ycocg_comp
-    for (sbi=0; sbi<4; sbi=sbi+1) begin : gen_mean_ycocg_sb
-      rgb2ycocg rgb2ycocg_u
-        (
-          .src_r            (mean[0][sbi][11:0]),
-          .src_g            (mean[1][sbi][11:0]),
-          .src_b            (mean[2][sbi][11:0]),
-          .dst_y            (mean_ycocg[0][sbi]),
-          .dst_co           (mean_ycocg[1][sbi]),
-          .dst_cg           (mean_ycocg[2][sbi])
-        );
-    end
+  for (sbi=0; sbi<4; sbi=sbi+1) begin : gen_mean_ycocg_sb
+    rgb2ycocg rgb2ycocg_u
+      (
+        .src_r            (mean[0][sbi][11:0]),
+        .src_g            (mean[1][sbi][11:0]),
+        .src_b            (mean[2][sbi][11:0]),
+        .dst_y            (mean_ycocg[0][sbi]),
+        .dst_co           (mean_ycocg[1][sbi]),
+        .dst_cg           (mean_ycocg[2][sbi])
+      );
   end
 endgenerate
 
@@ -344,7 +338,7 @@ reg signed [13:0] mean_converted [2:0][3:0];
 always @ (*)
   for (c = 0; c < 3; c = c + 1)
     for (sb = 0; sb < 4; sb = sb + 1)
-      mean_converted[c][sb] = ((blockCsc_dl == 2'd1) & ~fbls/*_dl*/) ? $signed({2'b0, mean_ycocg[c][sb]}) : mean[c][sb];
+      mean_converted[c][sb] = ((blockCsc_dl == 2'd1) & ~fbls) ? $signed(mean_ycocg[c][sb]) : mean[c][sb];
 
 reg signed [15:0] curBias [2:0];
 always @ (*)
@@ -385,7 +379,7 @@ always @ (posedge clk)
         midpoint[c][sb] <= clip3(middle_dl[c][sb], maxClip[c][sb], mean_converted[c][sb] + (curBias_dl[c]<<1));
 
 // Reconstruct
-reg signed [16:0] pDequant [2:0][1:0][7:0];
+reg signed [15:0] pDequant [2:0][1:0][7:0];
 always @ (posedge clk)
   if (mpp_ctrl_valid_dl[0])
     for (c = 0; c < 3; c = c + 1)
@@ -428,7 +422,7 @@ always @ (posedge clk)
                 if (blockMode_dl == MODE_MPPF)
                   pReconBlk[c][row][col] <= clip3(clipMin[c], {1'b0, maxPoint}, midpoint[c][col>>1] + pDequant[c][row][col]);
                 else
-                  pReconBlk[c][row][col] <= clip3(clipMin[c], {1'b0, maxPoint}, midpoint[c][col] + pDequant[c][row][col]);
+                  pReconBlk[c][row][col] <= clip3(clipMin[c], {1'b0, maxPoint}, midpoint[c][col&2'b11] + pDequant[c][row][col]);
               end
             end
         end

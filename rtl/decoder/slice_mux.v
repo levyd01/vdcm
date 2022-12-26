@@ -54,6 +54,8 @@ wire [MAX_NBR_SLICES-1:0] mem_rd_en;
 always @ (posedge clk_out_int or negedge rst_n)
   if (~rst_n)
     mem_rd_sel <= {$clog2(MAX_NBR_SLICES){1'b0}};
+  else if (flush)
+    mem_rd_sel <= {$clog2(MAX_NBR_SLICES){1'b0}};
   else if (mem_rd_sof[0])
     mem_rd_sel <= {$clog2(MAX_NBR_SLICES){1'b0}};
   else if (rd_eoc[mem_rd_sel] & mem_rd_en[mem_rd_sel])
@@ -67,6 +69,8 @@ reg eof_rd;
 reg [15:0] line_cnt_until_eof;   
 always @ (posedge clk_out_int or negedge rst_n)
   if (~rst_n)
+    line_cnt_until_eof <= 16'b0;
+  else if (flush)
     line_cnt_until_eof <= 16'b0;
   else if (mem_rd_sof[0])
     line_cnt_until_eof <= 16'b0;
@@ -115,6 +119,8 @@ reg [5:0] intervalActual;
 always @ (posedge clk_out_int or negedge rst_n)
   if (~rst_n)
     intervalActual <= 6'd0;
+  else if (flush)
+    intervalActual <= 6'd0;
   else if (fifo_almost_empty_clk_int[mem_rd_sel])
     intervalActual <= intervalDesired << 1;
   else
@@ -124,6 +130,8 @@ wire [MAX_NBR_SLICES-1:0] fifo_almost_full_clk_int;
 reg [7:0] intervalCnt;
 always @ (posedge clk_out_int or negedge rst_n)
   if (~rst_n)
+    intervalCnt <= 8'd0;
+  else if (flush)
     intervalCnt <= 8'd0;
   else if (pixs_out_eof)
     intervalCnt <= 8'd0;
@@ -138,6 +146,8 @@ reg enableInitDelay;
 always @ (posedge clk_out_int or negedge rst_n)
   if (~rst_n)
     enableInitDelay <= 1'b0;
+  else if (flush)
+    enableInitDelay <= 1'b0;
   else if (pixs_out_sof)
     enableInitDelay <= 1'b1;
   else if (pixs_out_eof)
@@ -148,6 +158,10 @@ reg enableStartRd;
 reg [9:0] initDelayCnt;
 always @ (posedge clk_out_int or negedge rst_n)
   if (~rst_n) begin
+    initDelayCnt <= 10'd0;
+    enableStartRd <= 1'b0;
+  end
+  else if (flush) begin
     initDelayCnt <= 10'd0;
     enableStartRd <= 1'b0;
   end
@@ -187,6 +201,8 @@ generate
     always @ (posedge clk_core or negedge rst_n)
       if (~rst_n)
         wr_pix4_cnt[gs] <= {ADDR_WIDTH{1'b0}};
+      else if (flush)
+        wr_pix4_cnt[gs] <= {ADDR_WIDTH{1'b0}};
       else if (pixs_in_sof[gs])
         wr_pix4_cnt[gs] <= {ADDR_WIDTH{1'b0}};
       else if (pixs_in_valid[gs])
@@ -197,6 +213,8 @@ generate
     
     always @ (posedge clk_out_int or negedge rst_n)
       if (~rst_n)
+        rd_pix4_cnt[gs] <= {ADDR_WIDTH{1'b0}};
+      else if (flush)
         rd_pix4_cnt[gs] <= {ADDR_WIDTH{1'b0}};
       else if (mem_rd_sof[gs])
         rd_pix4_cnt[gs] <= {ADDR_WIDTH{1'b0}};
@@ -271,6 +289,8 @@ always @ (posedge clk_out_int)
 always @ (posedge clk_out_int or negedge rst_n)
   if (~rst_n)
     firstPartOfLastBlockOfChunk <= 1'b0;
+  else if (flush)
+    firstPartOfLastBlockOfChunk <= 1'b0;
   else if (mem_rd_sof[0])
     firstPartOfLastBlockOfChunk <= 1'b0;
   else if ((rd_pix4_cnt[mem_rd_sel_dl[0]] == (slice_width>>2) - 2'd2) & mem_rd_valid[mem_rd_sel_dl[0]])
@@ -283,6 +303,8 @@ assign secondPartOfLastBlockOfChunk = lastBlockOfChunk & ~firstPartOfLastBlockOf
 
 always @ (posedge clk_out_int or negedge rst_n)
   if (~rst_n)
+    pixs_out_valid <= 4'b0;
+  else if (flush)
     pixs_out_valid <= 4'b0;
   else if (mem_rd_sof[0])
     pixs_out_valid <= 4'b0;

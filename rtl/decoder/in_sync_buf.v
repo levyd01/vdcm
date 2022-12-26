@@ -124,7 +124,6 @@ always @ (posedge clk_rd or negedge rst_n)
     out_eof <= 1'b0;
   end
   else if (mem_valid) begin
-    out_data <= rd_data[DATA_WIDTH-1:0];
     out_eof <= rd_data[DATA_WIDTH+1-1];
     out_sof <= rd_data[DATA_WIDTH+2-1];
     out_data_is_pps <= rd_data[DATA_WIDTH+3-1];

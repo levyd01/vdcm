@@ -429,7 +429,7 @@ assign scale = targetRateScale + targetRateBaseBits;
 wire [$clog2(MAX_SLICE_WIDTH*MAX_SLICE_HEIGHT)+6-1:0] offset;
 assign offset = 1'b1 << (scale - 1'b1);
 
-reg [14:0] baseTargetRate;
+reg [13:0] baseTargetRate;
 
 always @ (*)
   if (fbls)

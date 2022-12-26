@@ -2549,7 +2549,7 @@ always @ (posedge clk or negedge rst_n)
       if (parse_substreams)
         bit_pointer_r[c] <= bit_pointer[c];
 		
-reg signed [16:0] mppBlockQuant_r [2:0][15:0]; // TBD bit width of each element of the array
+reg signed [16:0] mppBlockQuant_r [2:0][7:0]; // TBD bit width of each element of the array
 reg signed [16:0] pQuant_r [2:0][15:0]; // TBD bit width of each element of the array
 always @ (posedge clk or negedge rst_n)
   if (~rst_n)
@@ -2629,7 +2629,7 @@ always @ (posedge clk) begin
     blockCsc_r <= nextBlockCsc;
     blockStepSize_r <= nextBlockStepSize;
     for (c = 0; c < 3; c = c + 1)
-      for (s = 0; s < 16; s = s + 1)
+      for (s = 0; s < 8; s = s + 1)
         mppBlockQuant_r[c][s] <= mppNextBlockQuant[c][s];
     mppfIndex_r <= mppfIndexNextBlock;
   end

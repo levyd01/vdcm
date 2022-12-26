@@ -52,25 +52,33 @@ wire [1023:0] pps_apb;
 localparam NBR_PPS_REG = 32;
 wire pps_apb_valid;
 
-apb_slave 
-#(
-  .NBR_REGS             (NBR_PPS_REG)
-)
-apb_slave_u
-(
-  .clk_apb              (clk_apb),
-  .clk_core             (clk_core),
-  .rst_n                (rst_n),
-  .paddr                (paddr),
-  .pwrite               (pwrite),
-  .psel                 (psel),
-  .penable              (penable),
-  .pwdata               (pwdata),
-  .pready               (pready),
-  .prdata               (prdata),
-  .register_bank_p      (pps_apb),
-  .reg_bank_valid       (pps_apb_valid)
-);
+generate
+  if (PPS_INPUT_METHOD == "APB") begin : gen_apb
+    apb_slave 
+    #(
+      .NBR_REGS             (NBR_PPS_REG)
+    )
+    apb_slave_u
+    (
+      .clk_apb              (clk_apb),
+      .clk_core             (clk_core),
+      .rst_n                (rst_n),
+      .paddr                (paddr),
+      .pwrite               (pwrite),
+      .psel                 (psel),
+      .penable              (penable),
+      .pwdata               (pwdata),
+      .pready               (pready),
+      .prdata               (prdata),
+      .register_bank_p      (pps_apb),
+      .reg_bank_valid       (pps_apb_valid)
+    );
+  end
+  else begin : gen_apb_stub
+    assign pps_apb = 1024'b0;
+    assign pps_apb_valid = 1'b0;
+  end
+endgenerate
 
 wire sync_buf_valid;
 wire [255:0] sync_buf_data;
