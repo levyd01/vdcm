@@ -39,9 +39,9 @@ always @ (*) begin
       end
     default:
       begin
-        if (G[13]) dst_g = 12'd0; else if (|G[12:8]) dst_g = 12'd255; else dst_g = G[11:0];
-        if (B[13]) dst_b = 12'd0; else if (|B[12:8]) dst_b = 12'd255; else dst_b = B[11:0];
-        if (R[13]) dst_r = 12'd0; else if (|R[12:8]) dst_r = 12'd255; else dst_r = R[11:0];
+        dst_g = 12'd0;
+        dst_b = 12'd0;
+        dst_r = 12'd0;
       end
   endcase
 end
