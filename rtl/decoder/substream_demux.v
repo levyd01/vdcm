@@ -8,7 +8,8 @@
 
 module substream_demux
 #(
-  parameter MAX_FUNNEL_SHIFTER_SIZE = 2*248 - 1
+  parameter MAX_FUNNEL_SHIFTER_SIZE = 2*248 - 1,
+  parameter MAX_SLICE_WIDTH         = 2560
 )
 (
   input wire clk,
@@ -53,7 +54,7 @@ module substream_demux
 
 );
 
-localparam RATE_BUFF_NUM_LINES = 2**9;
+localparam RATE_BUFF_NUM_LINES = 2**9; //((2*10752 + 2*MAX_SLICE_WIDTH*16) >> 8) + 1; // See spec Annex A
 localparam RATE_BUFF_ADDR_WIDTH = $clog2(RATE_BUFF_NUM_LINES);
 
 // Unpack inputs
@@ -199,20 +200,26 @@ rate_buffer_u
 );
 
 wire buffer_empty;
-assign buffer_empty = ~(nbr_wrap_around_wr ^ nbr_wrap_around_rd) & (rate_buffer_addr_w == rate_buffer_addr_r);
-wire buffer_full;
-assign buffer_full = (nbr_wrap_around_wr ^ nbr_wrap_around_rd) & (rate_buffer_addr_w == rate_buffer_addr_r);
-reg overflow;
-reg underflow;
-always @ (posedge clk or negedge rst_n)
-  if (~rst_n) begin
-    overflow <= 1'b0;
-    underflow <= 1'b0;
-  end
-  else begin
-    overflow <= buffer_full & w_en;
-    underflow <= buffer_empty & rd_en;
-  end
+assign buffer_empty = ~(nbr_wrap_around_wr ^ nbr_wrap_around_rd) ? (rate_buffer_addr_w == rate_buffer_addr_r) : (RATE_BUFF_NUM_LINES + rate_buffer_addr_w == rate_buffer_addr_r);
+
+`ifdef SIM_DEBUG
+  wire buffer_full;
+  assign buffer_full = (nbr_wrap_around_wr ^ nbr_wrap_around_rd) & (rate_buffer_addr_w == rate_buffer_addr_r);
+  reg overflow;
+  reg underflow;
+  wire [9:0] rb_fullness;
+  assign rb_fullness = ~(nbr_wrap_around_wr ^ nbr_wrap_around_rd) ? (rate_buffer_addr_w - rate_buffer_addr_r) : (RATE_BUFF_NUM_LINES + rate_buffer_addr_w - rate_buffer_addr_r);
+  
+  always @ (posedge clk or negedge rst_n)
+    if (~rst_n) begin
+      overflow <= 1'b0;
+      underflow <= 1'b0;
+    end
+    else begin
+      overflow <= buffer_full & w_en;
+      underflow <= buffer_empty & rd_en;
+    end
+`endif
   
 wire [3:0] mux_word_request_i; 
 always @ (posedge clk or negedge rst_n)

@@ -252,7 +252,7 @@ generate
         .slice_width                  (slice_width),
         .in_data                      (mem_wr_data[gs]),
         .in_sof                       (pixs_in_sof[gs]),
-        .in_valid                     (pixs_in_valid[gs]),
+        .in_valid                     (pixs_in_valid[gs] & ~pixs_out_eof),
         .empty                        (mem_empty[gs]),
         .fifo_almost_full             (fifo_almost_full[gs]),
         .fifo_almost_full_rd_clk      (fifo_almost_full_clk_int[gs]),

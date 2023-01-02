@@ -96,17 +96,6 @@ always @ (posedge clk_rd)
 reg [ADDR_WIDTH-1:0] addr_r;
 assign empty = (addr_w_rd_clk_domain == addr_r);
 
-/* For debug only. Should never occur: 
-wire full;
-assign full = (addr_w_rd_clk_domain[ADDR_WIDTH-2:0] == addr_r[ADDR_WIDTH-2:0]) & (addr_w_rd_clk_domain[ADDR_WIDTH-1] ^ addr_r[ADDR_WIDTH-1]);
-
-always @ (full)
-  if (full) begin
-    $display ("FIFO %0d is full", ID);
-    $stop;
-  end
-*/
-
 wire rd_en;
 assign rd_en = out_rd_en;
 
@@ -138,7 +127,7 @@ always @ (posedge clk_rd or negedge rst_n)
   else
     fifo_fullness <= fifo_size - ram_addr_r + ram_addr_w_rd_clk_domain;
 wire [ADDR_WIDTH-2:0] almost_full_thres;
-assign almost_full_thres = fifo_size - 7'd64;
+assign almost_full_thres = (fifo_size >= 9'd256) ? fifo_size - 8'd196 : fifo_size - 8'd128;
 always @ (posedge clk_rd)
   fifo_almost_full_rd_clk <= fifo_fullness > almost_full_thres;
 synchronizer sync_fifo_almost_full (.clk(clk_wr), .in(fifo_almost_full_rd_clk), .out(fifo_almost_full));

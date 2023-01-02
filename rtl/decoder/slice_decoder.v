@@ -158,6 +158,7 @@ wire sos_for_rc;
 
 substream_demux
 #(
+  .MAX_SLICE_WIDTH              (MAX_SLICE_WIDTH),
   .MAX_FUNNEL_SHIFTER_SIZE      (MAX_FUNNEL_SHIFTER_SIZE)
 )
 substream_demux_u

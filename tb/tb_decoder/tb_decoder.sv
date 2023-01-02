@@ -2,7 +2,6 @@
 
 `default_nettype none
 
-
 module tb_decoder
 #(
   parameter PPS_INPUT_METHOD = "IN_BAND" // "IN_BAND", "DIRECT", "APB"
@@ -12,11 +11,10 @@ parameter MAX_SLICE_WIDTH     = 2560;
 parameter MAX_SLICE_HEIGHT    = 2560;
 parameter MAX_NBR_SLICES = 8;
 
-
 real AVG_PIXEL_RATE = 1.2*(10**6); // pixels per second
 real SPEED_FACTOR = 1.2; // Factor mutiplying the minimum required rate of the internal DSC clock.
 
-real CLK_CORE_PERIOD = 100.0; // 16 pixels processed per slice per clock cycle
+real CLK_CORE_PERIOD = 100.0; // 4 pixels processed per slice per clock cycle
 reg clk_core = 1;
 always
   #(CLK_CORE_PERIOD/2) clk_core = ~clk_core;
@@ -33,8 +31,6 @@ function string split_using_delimiter_fn(input int offset, string str,string del
        return str.substr(i+1,i+3);
      end
 endfunction
-  
-localparam PEEK2AVERAGE_FACTOR = 2;
   
 integer fc;
 integer file_test_cfg;
@@ -57,9 +53,9 @@ initial begin
   $display("PPS_INPUT_METHOD = %s", PPS_INPUT_METHOD);
   
   ->write_output_type;
-  CLK_CORE_PERIOD = (10**6) / (AVG_PIXEL_RATE / 16.0 / chunks_per_line * SPEED_FACTOR);
-  CLK_IN_INT_PERIOD = (10**6) / AVG_PIXEL_RATE * 16*256/bits_per_pixel;
-  CLK_OUT_INT_PERIOD = (10**6) / (AVG_PIXEL_RATE / 4.0 * SPEED_FACTOR);
+  CLK_IN_INT_PERIOD = (10**6) / (AVG_PIXEL_RATE / 16/(256/bits_per_pixel));
+  CLK_OUT_INT_PERIOD = (10**6) / (AVG_PIXEL_RATE/4); // 4 pixels per cycle
+  CLK_CORE_PERIOD = CLK_OUT_INT_PERIOD * chunks_per_line;
   
 end
 

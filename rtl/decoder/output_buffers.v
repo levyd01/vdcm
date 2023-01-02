@@ -179,6 +179,13 @@ wire [4*3*14-1:0] er_rd_data_i_p;
 
 assign er_empty = (er_addr_rd == er_addr_wr) & ~(er_rd_wrap ^ er_wr_wrap);
 
+`ifdef SIM_DEBUG
+  integer er_fullness;
+  always @ (*)
+    er_fullness = ~(er_rd_wrap ^ er_wr_wrap) ? er_addr_wr - er_addr_rd : er_wr_num_lines + er_addr_wr - er_addr_rd;
+                                               
+`endif
+
 // Half slice size buffer 
 dp_ram
 #(
@@ -285,6 +292,14 @@ always @ (posedge clk or negedge rst_n)
 reg or_rd_wrap;
 wire or_empty;
 assign or_empty = (or_addr_rd == or_addr_wr) & ~(or_rd_wrap ^ or_wr_wrap);
+
+`ifdef SIM_DEBUG
+  integer or_fullness;
+  always @ (*)
+    or_fullness = ~(or_rd_wrap ^ or_wr_wrap) ? or_addr_wr - or_addr_rd : or_num_lines + or_addr_wr - or_addr_rd;
+                                               
+`endif
+
 
 always @ (posedge clk)
   if (sof) begin
