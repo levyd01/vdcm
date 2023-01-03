@@ -7,9 +7,10 @@ module tb_decoder
   parameter PPS_INPUT_METHOD = "IN_BAND" // "IN_BAND", "DIRECT", "APB"
 )();
 
-parameter MAX_SLICE_WIDTH     = 2560;
-parameter MAX_SLICE_HEIGHT    = 2560;
-parameter MAX_NBR_SLICES = 8;
+localparam MAX_SLICE_WIDTH     = 2560;
+localparam MAX_SLICE_HEIGHT    = 2560;
+localparam MAX_NBR_SLICES      = 8;
+localparam RATE_BUFF_NUM_LINES = 2**8; // Must be 2^n
 
 real AVG_PIXEL_RATE = 1.2*(10**6); // pixels per second
 real SPEED_FACTOR = 1.2; // Factor mutiplying the minimum required rate of the internal DSC clock.
@@ -222,6 +223,7 @@ vdcm_decoder
 #(
   .MAX_NBR_SLICES            (MAX_NBR_SLICES),
   .PPS_INPUT_METHOD          (PPS_INPUT_METHOD),
+  .RATE_BUFF_NUM_LINES       (RATE_BUFF_NUM_LINES),
   .MAX_SLICE_WIDTH           (MAX_SLICE_WIDTH),
   .MAX_SLICE_HEIGHT          (MAX_SLICE_HEIGHT)
 )

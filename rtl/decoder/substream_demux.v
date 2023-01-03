@@ -8,6 +8,7 @@
 
 module substream_demux
 #(
+  parameter RATE_BUFF_NUM_LINES     = 2**8,
   parameter MAX_FUNNEL_SHIFTER_SIZE = 2*248 - 1,
   parameter MAX_SLICE_WIDTH         = 2560
 )
@@ -54,7 +55,6 @@ module substream_demux
 
 );
 
-localparam RATE_BUFF_NUM_LINES = 2**9; //((2*10752 + 2*MAX_SLICE_WIDTH*16) >> 8) + 1; // See spec Annex A
 localparam RATE_BUFF_ADDR_WIDTH = $clog2(RATE_BUFF_NUM_LINES);
 
 // Unpack inputs

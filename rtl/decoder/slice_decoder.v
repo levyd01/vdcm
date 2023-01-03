@@ -8,6 +8,7 @@
 
 module slice_decoder
 #(
+  parameter RATE_BUFF_NUM_LINES     = 2**8,
   parameter MAX_SLICE_WIDTH         = 2560,
   parameter MAX_SLICE_HEIGHT        = 2560
 )
@@ -158,6 +159,7 @@ wire sos_for_rc;
 
 substream_demux
 #(
+  .RATE_BUFF_NUM_LINES          (RATE_BUFF_NUM_LINES),
   .MAX_SLICE_WIDTH              (MAX_SLICE_WIDTH),
   .MAX_FUNNEL_SHIFTER_SIZE      (MAX_FUNNEL_SHIFTER_SIZE)
 )

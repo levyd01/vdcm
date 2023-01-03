@@ -10,6 +10,7 @@ module vdcm_decoder
 #(
   parameter MAX_NBR_SLICES          = 2,
   parameter PPS_INPUT_METHOD        = "IN_BAND", // "IN_BAND", "DIRECT", "APB"
+  parameter RATE_BUFF_NUM_LINES     = 2**8,
   parameter MAX_SLICE_WIDTH         = 2560,
   parameter MAX_SLICE_HEIGHT        = 2560
 )
@@ -314,6 +315,7 @@ generate
   for (s=0; s<MAX_NBR_SLICES; s=s+1) begin : gen_slice_decoder
     slice_decoder
     #(
+      .RATE_BUFF_NUM_LINES     (RATE_BUFF_NUM_LINES),
       .MAX_SLICE_WIDTH         (MAX_SLICE_WIDTH),
       .MAX_SLICE_HEIGHT        (MAX_SLICE_HEIGHT)
     )
