@@ -1,3 +1,15 @@
+// *********************************************************************
+//
+// Property of Vicip.
+// Restricted rights to use, duplicate or disclose this code are
+// granted through contract.
+//
+// (C) Copyright Vicip 2022
+//
+// Author         : David Levy
+// Contact        : david.levy@vic-ip.com
+// *********************************************************************
+
 // The pixel buffer saves data in the original picture color space. But decoding is not done in RGB.
 // Original color space possibilities are: RGB (0) or YCbCr (2)
 // Decoding color space possibilies are: YCoCg (1) or YCbCr (2)

@@ -1,3 +1,15 @@
+// *********************************************************************
+//
+// Property of Vicip.
+// Restricted rights to use, duplicate or disclose this code are
+// granted through contract.
+//
+// (C) Copyright Vicip 2022
+//
+// Author         : David Levy
+// Contact        : david.levy@vic-ip.com
+// *********************************************************************
+
 module masterQp2qp
 (
   input wire [1:0] bits_per_component_coded,
