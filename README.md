@@ -55,3 +55,7 @@ Performance:
 Maximum frequency is difficult to estimate: it depends very much on the technology node. FPGA results are irrelevant
 Great care is taken to reduce the length of the critical path by using deep pipelining
 
+Documentation:
+
+"VDC-M Decoder IP integration" and "VDC-M Decoder IP User Manual" detailed documents are available upon request.
+
